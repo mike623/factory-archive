@@ -10,7 +10,7 @@ use crate::blueprints::{self, BpError, CurrentSession};
 use crate::resolve;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -122,18 +122,51 @@ fn bind() -> Result<(Server, u16), String> {
     Err(format!("couldn't open a port between {FIRST_PORT} and {}: {last}", FIRST_PORT + PORT_TRIES - 1))
 }
 
-/// The address other machines on the network reach us at. Connecting a UDP socket
+/// The interface the OS would route LAN traffic through. Connecting a UDP socket
 /// only picks a route; no packet is sent.
-fn lan_ip() -> Option<IpAddr> {
+fn routed_ip() -> Option<Ipv4Addr> {
     let sock = UdpSocket::bind("0.0.0.0:0").ok()?;
     sock.connect("192.168.0.1:9").or_else(|_| sock.connect("10.0.0.1:9")).ok()?;
-    let ip = sock.local_addr().ok()?.ip();
-    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
+    match sock.local_addr().ok()?.ip() { IpAddr::V4(ip) => Some(ip), _ => None }
+}
+
+/// Lower is a better guess for "the address friends on the same network use".
+/// VPNs and virtual adapters (WSL, Hyper-V, VirtualBox, Docker) often win the route
+/// guess, so every private address is listed and home-network ranges go first.
+fn lan_rank(name: &str, ip: Ipv4Addr, routed: Option<Ipv4Addr>) -> Option<u8> {
+    let [a, b, ..] = ip.octets();
+    let range = if a == 192 && b == 168 { 1 }
+        else if a == 10 { 2 }
+        else if a == 172 && (16..32).contains(&b) { 3 }
+        else if a == 100 && (64..128).contains(&b) { 4 } // CGNAT, used by Tailscale and similar
+        else { return None };
+    let n = name.to_ascii_lowercase();
+    let virtual_nic = ["vethernet", "virtualbox", "vmware", "vbox", "docker", "wsl", "hyper-v", "veth", "br-", "utun", "tailscale", "zerotier", "hamachi"]
+        .iter().any(|v| n.contains(v));
+    // the route guess only breaks ties: a VPN on 10.x shouldn't beat Wi-Fi on 192.168.x
+    Some(range * 2 + u8::from(Some(ip) != routed) + if virtual_nic { 20 } else { 0 })
+}
+
+fn lan_ips() -> Vec<Ipv4Addr> {
+    let routed = routed_ip();
+    let mut found: Vec<(u8, Ipv4Addr)> = if_addrs::get_if_addrs().unwrap_or_default().into_iter()
+        .filter_map(|i| match i.ip() {
+            IpAddr::V4(ip) => lan_rank(&i.name, ip, routed).map(|r| (r, ip)),
+            _ => None,
+        })
+        .collect();
+    if found.is_empty() {
+        if let Some(ip) = routed.filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local()) {
+            found.push((0, ip));
+        }
+    }
+    found.sort();
+    found.dedup_by_key(|f| f.1);
+    found.into_iter().map(|f| f.1).collect()
 }
 
 fn urls_for(port: u16) -> Vec<String> {
-    let mut urls = Vec::new();
-    if let Some(ip) = lan_ip() { urls.push(format!("http://{ip}:{port}")); }
+    let mut urls: Vec<String> = lan_ips().into_iter().map(|ip| format!("http://{ip}:{port}")).collect();
     urls.push(format!("http://localhost:{port}"));
     urls
 }
@@ -340,5 +373,19 @@ mod tests {
         assert_eq!(percent_decode("a%2Fb").as_deref(), Some("a/b")); // then rejected by valid_component
         assert_eq!(percent_decode("bad%zz"), None);
         assert_eq!(percent_decode("cut%2"), None);
+    }
+
+    #[test]
+    fn ranks_home_network_before_virtual_adapters() {
+        let ip = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+        let routed = Some(ip("10.8.0.2")); // a VPN won the route guess
+        let mut v: Vec<(u8, Ipv4Addr)> = [
+            ("vEthernet (WSL)", "172.20.48.1"), ("Wi-Fi", "192.168.1.23"), ("OpenVPN", "10.8.0.2"),
+            ("Tailscale", "100.101.1.2"), ("Ethernet", "8.8.8.8"), ("Ethernet", "169.254.3.4"),
+        ].iter().filter_map(|(n, a)| lan_rank(n, ip(a), routed).map(|r| (r, ip(a)))).collect();
+        v.sort();
+        let order: Vec<String> = v.iter().map(|x| x.1.to_string()).collect();
+        assert_eq!(order, ["192.168.1.23", "10.8.0.2", "172.20.48.1", "100.101.1.2"]);
+        assert!(lan_rank("Ethernet", ip("10.0.0.5"), Some(ip("10.0.0.5"))) < lan_rank("Ethernet", ip("10.0.0.6"), Some(ip("10.0.0.5"))));
     }
 }

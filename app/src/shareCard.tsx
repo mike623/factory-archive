@@ -10,14 +10,16 @@ const SOURCE_LABEL = { autosave: 'latest autosave', blueprints: 'last used' } as
 
 export function ShareCard({ share }: { share: ShareStateUI }) {
   const { info, busy, error, available, toggle, sessions, pinSession } = share;
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
   const on = !!info;
   const url = info?.urls[0];
+  const others = info?.urls.slice(1).filter(u => !u.includes('//localhost:')) ?? [];
   const detected = sessions?.detected;
   const target = sessions?.pinned ?? detected?.name;
 
-  const copy = async () => {
-    if (url && await copyText(url)) { setCopied(true); setTimeout(() => setCopied(false), 1400); }
+  const copy = async (u: string) => {
+    if (await copyText(u)) { setCopied(u); setTimeout(() => setCopied(null), 1400); }
   };
 
   return (
@@ -39,17 +41,37 @@ export function ShareCard({ share }: { share: ShareStateUI }) {
       {!available && <div className="mono" style={{ fontSize: 9.5, color: 'var(--text-mute)', marginTop: 7 }}>Desktop app only</div>}
 
       {on && url && <>
-        <button onClick={copy} title="Copy link for players"
+        <button onClick={() => copy(url)} title="Copy link for players"
           style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', marginTop: 9, height: 28, padding: '0 8px',
             borderRadius: 5, background: 'var(--well)', border: '1px solid var(--border)', color: 'var(--accent-bright)' }}>
           <span className="mono" style={{ flex: 1, minWidth: 0, fontSize: 10.5, textAlign: 'left', overflow: 'hidden',
             textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url.replace(/^http:\/\//, '')}</span>
-          {copied ? <IcCheck size={13} /> : <IcCopy size={13} />}
+          {copied === url ? <IcCheck size={13} /> : <IcCopy size={13} />}
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7 }}>
           <Dot />
-          <span className="mono" style={{ fontSize: 9.5, color: 'var(--text-mute)' }}>Same network · no PIN</span>
+          <span className="mono" style={{ flex: 1, fontSize: 9.5, color: 'var(--text-mute)' }}>Same network · no PIN</span>
+          <button onClick={() => setHelp(h => !h)} aria-expanded={help}
+            style={{ padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10, textDecoration: 'underline' }}>
+            Can't connect?</button>
         </div>
+        {help && <div style={{ fontSize: 10.5, color: 'var(--text-dim)', marginTop: 7, lineHeight: 1.45 }}>
+          {others.length > 0 && <>
+            <div>If the link above times out, try another address:</div>
+            {others.map(u => (
+              <button key={u} onClick={() => copy(u)} title="Copy link"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', marginTop: 4, height: 24, padding: '0 8px',
+                  borderRadius: 5, background: 'var(--well)', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>
+                <span className="mono" style={{ flex: 1, fontSize: 10, textAlign: 'left' }}>{u.replace(/^http:\/\//, '')}</span>
+                {copied === u ? <IcCheck size={12} /> : <IcCopy size={12} />}
+              </button>
+            ))}
+          </>}
+          <div style={{ marginTop: others.length ? 7 : 0 }}>
+            On Windows, open <b>Allow an app through Windows Firewall</b> and tick <b>Private</b> for Factory Archive.
+            Also make sure your network is set to <b>Private</b>, not Public, in Wi-Fi or Ethernet settings.
+          </div>
+        </div>}
       </>}
 
       {available && sessions && <label style={{ display: 'block', marginTop: 9 }}>
