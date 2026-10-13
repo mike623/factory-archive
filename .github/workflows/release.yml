@@ -1,10 +1,14 @@
 name: Release
 
-# Push a version tag to publish an update, e.g.:
-#   git tag v0.2.0 && git push origin v0.2.0
-# Installed apps pick it up through the updater (latest.json on the newest release).
+# Three ways to publish an update (installed apps pick it up via latest.json on the newest release):
+#   1. Bump "version" in app/src-tauri/tauri.conf.json and push to main. It releases if that
+#      version has no release yet.
+#   2. Push a tag: git tag v0.2.0 && git push origin v0.2.0
+#   3. Actions → Release → Run workflow, with a version.
 on:
   push:
+    branches: [main]
+    paths: ['app/src-tauri/tauri.conf.json', '.github/workflows/release.yml']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -16,7 +20,35 @@ permissions:
   contents: write
 
 jobs:
+  # Decide which version to release, and skip if it's already released.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      go: ${{ steps.v.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT" ]; then v="$INPUT"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME}"
+          else v=$(node -p 'require("./app/src-tauri/tauri.conf.json").version'); fi
+          v="${v#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "branch" ] && gh release view "v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$v is already released; bump the version in tauri.conf.json to publish a new one."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing v$v"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +59,7 @@ jobs:
             args: '--target universal-apple-darwin'
     runs-on: ${{ matrix.os }}
     env:
-      VERSION: ${{ inputs.version || github.ref_name }}
+      VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
