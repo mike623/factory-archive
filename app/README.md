@@ -11,7 +11,9 @@ This is the desktop implementation of the **Factory Archive** design in `../proj
 
 On macOS the app scans every CrossOver bottle and lists each one that has Satisfactory data. A bottle is an ordinary folder, so the app can read and write it directly. If you keep bottles somewhere custom, click the folder card in the sidebar, or **Change…** in the export drawer, to choose the folder by hand. The app remembers your choice.
 
-**After exporting, reload your save.** Satisfactory reads blueprint files when a save loads, so new or updated blueprints show up after you go to the main menu and load the save again. You don't need to restart the whole game. Avoid saving over the same blueprint in-game while exporting, or the game may write its own copy over yours.
+**Close the game before exporting, then start it again.** Hosting guides and player reports say copying files while the game or server is running can fail, and that blueprints appear after a restart. ([G-Portal](https://www.g-portal.com/wiki/en/satisfactory-importing-and-exporting-blueprints-on-your-server/), [Shockbyte](https://shockbyte.com/help/knowledgebase/articles/how-to-upload-blueprints-to-your-satisfactory-server))
+
+**Blueprints belong to the world, not the player.** Each save session has its own `blueprints\<session name>\` folder on whichever machine runs the world: your PC when you host, the host's PC when you join a friend, or the server for a dedicated server. The folder name must match the session name exactly. A known bug can hide blueprints when the session name has spaces or special characters ([fix guide](https://wiki.indifferentbroccoli.com/Satisfactory/InvisibleBlueprintFix)). The `.sbp` is required; the `.sbpcfg` only holds the icon and description.
 
 Satisfactory keeps blueprints in one subfolder per save session, under the folder above.
 

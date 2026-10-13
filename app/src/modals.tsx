@@ -280,6 +280,9 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
               fontFamily: 'var(--font-mono)', fontSize: 10 }}>Change…</button>}
             <Dot color={current?.found ? 'var(--ok)' : 'var(--warn)'} />
           </div>
+          {phase === 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9,
+            fontSize: 11, color: 'var(--warn)' }}>
+            <IcWarn size={13} style={{ flexShrink: 0 }} />Close Satisfactory before exporting</div>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
@@ -323,7 +326,7 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ok)', fontSize: 13, fontWeight: 600 }}>
                   <IcCheck size={18} /><span>Exported {list.length} blueprint{list.length !== 1 ? 's' : ''}
                     <span style={{ display: 'block', marginTop: 2, fontSize: 11, fontWeight: 500, color: 'var(--text-mute)' }}>
-                      Reload your save in-game to see them</span></span></div>
+                      Start the game and load that session to see them</span></span></div>
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>
             : <Btn variant="primary" full size="lg" icon={IcExport} disabled={!items.length || !current || phase === 'running'} onClick={run}>
                 {phase === 'running' ? 'Exporting…' : `Export ${items.length} to game folder`}</Btn>}
