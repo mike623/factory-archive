@@ -46,6 +46,26 @@ jobs:
           workspaces: app/src-tauri -> target
 
       - run: npm ci
+
+      # Report whether the release signing key/password work, without failing this build.
+      - name: Check update signing key
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pw=$([ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && echo yes || echo no)
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "::warning title=Signing key::TAURI_SIGNING_PRIVATE_KEY is empty or missing (password set: $pw)"; exit 1; fi
+          echo probe > "$RUNNER_TEMP/probe.txt"
+          if out=$(npx tauri signer sign "$RUNNER_TEMP/probe.txt" < /dev/null 2>&1); then
+            echo "::notice title=Signing key::OK (key length ${#TAURI_SIGNING_PRIVATE_KEY}, password set: $pw)"
+          else
+            msg=$(printf '%s' "$out" | grep -iE 'error|password|key' | tail -n 4 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::warning title=Signing key check failed (key length ${#TAURI_SIGNING_PRIVATE_KEY}, password set: $pw)::$msg"
+            exit 1
+          fi
       - run: npx tauri build ${{ matrix.args }}
 
       - uses: actions/upload-artifact@v4

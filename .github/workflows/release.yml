@@ -62,6 +62,25 @@ jobs:
       - run: npm ci
         working-directory: app
 
+      # Fail fast with a readable error if the signing key or password is wrong, instead of
+      # failing (or waiting on a password prompt) at the end of a long build. Never prints the key.
+      - name: Check update signing key
+        shell: bash
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "::error title=Signing key::Secret TAURI_SIGNING_PRIVATE_KEY is empty or missing"; exit 1; fi
+          echo "key length: ${#TAURI_SIGNING_PRIVATE_KEY}, password set: $([ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && echo yes || echo no)"
+          echo probe > "$RUNNER_TEMP/probe.txt"
+          if ! out=$(npx tauri signer sign "$RUNNER_TEMP/probe.txt" < /dev/null 2>&1); then
+            msg=$(printf '%s' "$out" | tail -n 8 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=Signing key check failed (password set: $([ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && echo yes || echo no))::$msg"
+            exit 1
+          fi
+          echo "Signing key OK"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
