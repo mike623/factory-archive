@@ -1,13 +1,13 @@
 // library.tsx — sidebar + filter rail
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { CATEGORIES, ALL_TAGS, GAME_VERSIONS, SOURCES, type NavId, type SourceId } from './data';
 import { Btn, Dot, SourceMark, Tag } from './components';
 import {
-  IcCheck, IcClock, IcCube, IcFile, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
+  IcCheck, IcClock, IcCube, IcFile, IcFolder, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { tailPath } from './platform';
+import { openFolder, tailPath } from './platform';
 import type { GameFolderState } from './gameFolder';
 import type { ShareStateUI } from './share';
 import { ShareCard } from './shareCard';
@@ -29,6 +29,11 @@ const NAV: { id: NavId; label: string; icon: Icon }[] = [
   { id: 'favorites', label: 'Favorites',    icon: IcStar },
 ];
 
+const footerBtn: CSSProperties = {
+  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+  borderRadius: 'var(--r-sm)', background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)',
+};
+
 /* ============ SIDEBAR ============ */
 export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
@@ -37,6 +42,14 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
+  const targetSession = share.sessions?.pinned ?? share.sessions?.detected?.name ?? null;
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const openCurrent = async () => {
+    if (!current) return;
+    setFolderError(null);
+    try { await openFolder(current.path, targetSession); }
+    catch (e) { setFolderError(String(e).replace(/^Error: /, '')); setTimeout(() => setFolderError(null), 6000); }
+  };
   return (
     <aside style={{ width: 210, flexShrink: 0, background: 'var(--bg-deep)',
       borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
@@ -119,13 +132,20 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {!current ? 'Choose folder…' : current.kind === 'crossover' ? current.label : tailPath(current.path, 2)}</div>
         </button>
-        <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          style={{ width: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          borderRadius: 'var(--r)', background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>
-          {theme === 'dark' ? <IcSun size={15} /> : <IcMoon size={15} />}
-        </button>
+        <div style={{ width: 30, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <button onClick={openCurrent} disabled={!current}
+            title={targetSession ? `Open the "${targetSession}" blueprint folder` : 'Open the blueprint folder'}
+            aria-label="Open blueprint folder" style={footerBtn}>
+            <IcFolder size={14} />
+          </button>
+          <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} style={footerBtn}>
+            {theme === 'dark' ? <IcSun size={14} /> : <IcMoon size={14} />}
+          </button>
+        </div>
       </div>
+      {folderError && <div role="alert" style={{ padding: '0 12px 10px', marginTop: -4, fontSize: 10.5, lineHeight: 1.4,
+        color: 'var(--warn)' }}>{folderError}</div>}
     </aside>
   );
 }

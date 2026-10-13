@@ -52,6 +52,25 @@ The macOS build isn't signed or notarized, so on first launch macOS will say it 
 xattr -dr com.apple.quarantine "/Applications/Factory Archive.app"
 ```
 
+## Auto-update
+
+Installed apps check GitHub Releases at launch and every 6 hours. When a newer version exists, a banner offers **Install & restart**. Updates are signed, and the app only installs packages signed with this project's key.
+
+**One-time setup (repo owner):** add the private signing key as a repository secret. Go to *Settings → Secrets and variables → Actions → New repository secret*, name it `TAURI_SIGNING_PRIVATE_KEY`, and paste the contents of the key file. The matching public key is in `src-tauri/tauri.conf.json` under `plugins.updater`. Keep the private key safe: if it's lost, installed copies can't update and everyone has to reinstall from a build signed with a new key.
+
+**Publishing an update:**
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+You can also run the **Release** workflow by hand from the Actions tab. It stamps the version, builds Windows and macOS, signs them, and publishes a GitHub Release with the installers and `latest.json`, which installed apps read to find updates. Builds from the plain **Desktop build** workflow don't include the update packages, so install from a Release to get auto-updates.
+
+## Open the blueprint folder
+
+The folder button in the sidebar footer opens the current world's blueprint folder in Explorer or Finder. That's the session that imports go to, or the blueprints root if that session has no folder yet. After a batch export, **Open** in the export drawer does the same.
+
 ## Run from source (hot reload)
 
 One-time prerequisites:

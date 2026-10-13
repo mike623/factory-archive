@@ -12,6 +12,7 @@ import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
+import { UpdateBanner } from './UpdateBanner';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -158,6 +159,7 @@ export default function App() {
         <Btn variant="primary" icon={IcExport} onClick={() => setExportOpen(true)}>Export {sel.size} to game folder</Btn>
       </div>}
 
+      <UpdateBanner />
       <ImportToasts share={share} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint} />
       <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}

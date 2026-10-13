@@ -1,0 +1,78 @@
+name: Release
+
+# Push a version tag to publish an update, e.g.:
+#   git tag v0.2.0 && git push origin v0.2.0
+# Installed apps pick it up through the updater (latest.json on the newest release).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the v (e.g. 0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: macos-latest
+            args: '--target universal-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - name: Stamp version from tag
+        shell: bash
+        working-directory: app
+        run: |
+          v="${VERSION#v}"
+          node -e '
+            const fs = require("fs"), v = process.argv[1];
+            if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(v)) { console.error("bad version: " + v); process.exit(1); }
+            for (const f of ["package.json", "src-tauri/tauri.conf.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8")); j.version = v;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }' "$v"
+          echo "TAG=v$v" >> "$GITHUB_ENV"
+
+      - run: npm ci
+        working-directory: app
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ env.TAG }}
+          releaseName: Factory Archive ${{ env.TAG }}
+          releaseBody: Download the installer for your platform below. Installed copies update themselves.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":true}}'

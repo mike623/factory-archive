@@ -84,3 +84,9 @@ export async function listSessions(root: string): Promise<SessionsInfo> {
 export async function shareSetSession(name: string | null): Promise<void> {
   if (isTauri()) await invoke('share_set_session', { name });
 }
+
+/** Open the blueprints folder, or a session folder inside it, in Explorer / Finder. */
+export async function openFolder(root: string, session?: string | null): Promise<void> {
+  if (!isTauri()) throw new Error('Opening folders works in the desktop app');
+  await invoke<string>('open_folder', { root, session: session ?? null });
+}

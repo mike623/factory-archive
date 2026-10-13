@@ -78,6 +78,25 @@ fn game_folders(app: tauri::AppHandle) -> Result<Vec<GameFolder>, String> {
     Ok(out)
 }
 
+/// Open the blueprints folder (or one session inside it) in Explorer / Finder.
+/// Only existing directories are opened, never files.
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle, root: String, session: Option<String>) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let root = PathBuf::from(root);
+    let target = session
+        .filter(|s| blueprints::valid_component(s))
+        .map(|s| root.join(s))
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(|| root.clone());
+    if !target.is_dir() {
+        return Err("This folder doesn't exist yet. Satisfactory creates it when you save your first blueprint.".into());
+    }
+    let path = target.to_string_lossy().into_owned();
+    app.opener().open_path(&path, None::<&str>).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// Start sharing `root` (a game's `blueprints` folder) with players on the local network.
 #[tauri::command]
 fn share_start(app: tauri::AppHandle, state: tauri::State<'_, ShareState>, root: String) -> Result<ShareInfo, String> {
@@ -118,8 +137,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
-        .invoke_handler(tauri::generate_handler![game_folders, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

@@ -6,7 +6,7 @@ import {
   IcCheck, IcClose, IcDimensions, IcExport, IcFolder, IcLink, IcMachine, IcPlus, IcPower, IcSearch, IcUpload,
   IcUser, IcWarn, type Icon,
 } from './icons';
-import { tailPath } from './platform';
+import { openFolder, tailPath } from './platform';
 import type { GameFolderState } from './gameFolder';
 
 export function detectSource(url: string): SourceId | null {
@@ -327,6 +327,8 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
                   <IcCheck size={18} /><span>Exported {list.length} blueprint{list.length !== 1 ? 's' : ''}
                     <span style={{ display: 'block', marginTop: 2, fontSize: 11, fontWeight: 500, color: 'var(--text-mute)' }}>
                       Start the game and load that session to see them</span></span></div>
+                {current && <Btn variant="ghost" icon={IcFolder} title="Open the target folder"
+                  onClick={() => openFolder(current.path).catch(() => {})}>Open</Btn>}
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>
             : <Btn variant="primary" full size="lg" icon={IcExport} disabled={!items.length || !current || phase === 'running'} onClick={run}>
                 {phase === 'running' ? 'Exporting…' : `Export ${items.length} to game folder`}</Btn>}
