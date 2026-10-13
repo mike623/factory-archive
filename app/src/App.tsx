@@ -21,6 +21,7 @@ import {
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
 import { UpdateBanner } from './UpdateBanner';
+import { useUpdater } from './updater';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -74,6 +75,7 @@ export default function App() {
     () => isTauri() ? [] : SAMPLE_LIBRARY.filter(b => b.status === 'installed').map(b => b.id));
   const favs = useMemo(() => new Set(favList), [favList]);
   const notices = useNotices();
+  const updater = useUpdater();
   const [dropping, setDropping] = useState(false);
   const [nav, setNav] = useState<NavId>('library');
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -219,7 +221,7 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={metadata} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={metadata} updater={updater} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -269,7 +271,7 @@ export default function App() {
           {copyMode ? `Copy ${sel.size} to another world` : `Export ${sel.size} to game folder`}</Btn>
       </div>}
 
-      <UpdateBanner />
+      <UpdateBanner u={updater} />
       <ImportToasts share={share} />
       <Notices list={notices.list} dismiss={notices.dismiss} />
       {dropping && <div style={{ position: 'fixed', inset: 0, zIndex: 80, pointerEvents: 'none', display: 'flex',

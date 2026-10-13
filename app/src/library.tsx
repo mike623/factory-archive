@@ -10,6 +10,7 @@ import type { Theme } from './theme';
 import { openFolder, tailPath } from './platform';
 import type { GameFolderState } from './gameFolder';
 import type { ShareStateUI } from './share';
+import type { UpdaterState } from './updater';
 import { ShareCard } from './shareCard';
 
 export interface Filters {
@@ -35,12 +36,13 @@ const footerBtn: CSSProperties = {
 };
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
   theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState; share: ShareStateUI;
   /** blueprint-site sources only mean something for site metadata */
   showSources: boolean;
+  updater: UpdaterState;
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
@@ -67,6 +69,18 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
         <div style={{ lineHeight: 1.15, flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13.5, letterSpacing: '-.01em' }}>Factory Archive</div>
           <div className="tlabel" style={{ fontSize: 8.5, marginTop: 2 }}>Blueprint Manager</div>
+          {updater.available && <button onClick={updater.checkNow} disabled={updater.manual === 'checking'}
+            title="Check for updates" style={{ display: 'block', marginTop: 4, padding: 0, background: 'none', border: 'none',
+              fontFamily: 'var(--font-mono)', fontSize: 9.5, textAlign: 'left',
+              color: updater.manual === 'failed' ? 'var(--warn)' : updater.manual === 'latest' ? 'var(--ok)' : 'var(--text-mute)' }}>
+            {updater.current ? `v${updater.current} · ` : ''}
+            <span style={{ textDecoration: updater.manual ? 'none' : 'underline', textUnderlineOffset: 2 }}>
+              {updater.manual === 'checking' ? 'Checking…'
+                : updater.manual === 'latest' ? 'Up to date ✓'
+                : updater.manual === 'found' ? 'Update found'
+                : updater.manual === 'failed' ? "Couldn't check"
+                : 'Check for updates'}</span>
+          </button>}
         </div>
       </div>
 

@@ -1,10 +1,9 @@
 // UpdateBanner.tsx — "Update available" pill at the top of the window
-import { useUpdater } from './updater';
+import type { UpdaterState } from './updater';
 import { Btn } from './components';
 import { IcClose, IcDownload, IcRefresh } from './icons';
 
-export function UpdateBanner() {
-  const u = useUpdater();
+export function UpdateBanner({ u }: { u: UpdaterState }) {
   if (!u.visible) return null;
   const busy = u.phase === 'downloading' || u.phase === 'ready';
   return (

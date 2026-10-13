@@ -13,24 +13,43 @@ export function useUpdater() {
   const [progress, setProgress] = useState(0); // 0..1, or -1 when the size is unknown
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [current, setCurrent] = useState<string | null>(null);
+  /** result of the last manual check, shown next to the button for a few seconds */
+  const [manual, setManual] = useState<'checking' | 'latest' | 'found' | 'failed' | null>(null);
 
-  const checkNow = useCallback(async () => {
+  useEffect(() => {
     if (!isTauri()) return;
+    import('@tauri-apps/api/app').then(m => m.getVersion()).then(setCurrent).catch(() => {});
+  }, []);
+
+  const check = useCallback(async (): Promise<'found' | 'latest' | 'failed'> => {
+    if (!isTauri()) return 'failed';
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const u = await check();
-      if (u) { setUpdate(u); setPhase(p => (p === 'idle' ? 'available' : p)); }
+      if (u) { setUpdate(u); setPhase(p => (p === 'idle' ? 'available' : p)); return 'found'; }
+      return 'latest';
     } catch (e) {
-      // no release published yet, or offline — try again later, quietly
+      // no release published yet, or offline — automatic checks stay quiet
       console.warn('update check failed', e);
+      return 'failed';
     }
   }, []);
 
   useEffect(() => {
-    checkNow();
-    const t = setInterval(checkNow, RECHECK_MS);
+    check();
+    const t = setInterval(check, RECHECK_MS);
     return () => clearInterval(t);
-  }, [checkNow]);
+  }, [check]);
+
+  /** "Check for updates" button: always shows the banner again if something is found */
+  const checkNow = useCallback(async () => {
+    setManual('checking');
+    const r = await check();
+    if (r === 'found') setDismissed(false);
+    setManual(r);
+    setTimeout(() => setManual(m => (m === r ? null : m)), 5000);
+  }, [check]);
 
   const install = useCallback(async () => {
     if (!update) return;
@@ -50,6 +69,7 @@ export function useUpdater() {
   }, [update]);
 
   return {
+    current, manual, checkNow, available: isTauri(),
     version: update?.version ?? null,
     notes: update?.body ?? null,
     phase, progress, error,
@@ -57,3 +77,5 @@ export function useUpdater() {
     install, dismiss: () => setDismissed(true),
   };
 }
+
+export type UpdaterState = ReturnType<typeof useUpdater>;
