@@ -8,6 +8,7 @@ import {
 } from './icons';
 import { copyText, openExternal } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
+import { BreakdownSection, ConfigSwatch, useBlueprintInfo } from './breakdown';
 
 const overlayChip = {
   fontSize: 10, padding: '4px 9px', borderRadius: 5, background: 'rgba(8,9,11,.7)',
@@ -82,9 +83,11 @@ function HeroShot({ bp, active, shots, image, onDropImage }: {
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onToggleFav }: {
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onToggleFav, root = null }: {
   bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
   fav: boolean; onToggleFav: () => void;
+  /** game blueprints folder, to read this blueprint's own files */
+  root?: string | null;
 }) {
   const [active, setActive] = useState(0);
   const [images, setImages] = useState<Record<number, string>>({});
@@ -94,6 +97,9 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
   const s = STATUS[bp.status];
   const src = SOURCES[bp.source];
   const shots = Math.min(bp.shots, 6);
+  const info = useBlueprintInfo(bp, root);
+  const notes = bp.notes || info?.config?.description
+    || (bp.onDisk ? `Saved in the “${bp.session}” world. Satisfactory loads it when that save is loaded.` : '');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -111,7 +117,8 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
               </div>
               <h1 style={{ margin: 0, fontSize: 27, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.1,
                 textWrap: 'balance' }}>{bp.name}</h1>
-              {bp.title && <div style={{ marginTop: 6, fontSize: 14, color: 'var(--text-dim)' }}>{bp.title}</div>}
+              {(bp.title || info?.config) && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 14, color: 'var(--text-dim)' }}>
+                {info?.config && <ConfigSwatch config={info.config} />}{bp.title}</div>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10, color: 'var(--text-dim)', flexWrap: 'wrap' }}>
                 {bp.author && <MetaInline icon={IcUser}>{bp.author}</MetaInline>}
                 {bp.session && <MetaInline icon={IcFolder}>{bp.session}</MetaInline>}
@@ -140,9 +147,13 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
               ))}
             </div>
 
+            {info && (info.breakdown || info.error) && <Block title="Breakdown" icon={IcLayers}>
+              <BreakdownSection info={info} />
+            </Block>}
+
             <Block title="Notes" icon={IcInfo}>
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--text-dim)', textWrap: 'pretty', maxWidth: 640 }}>
-                {bp.notes}</p>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--text-dim)', textWrap: 'pretty', maxWidth: 640, whiteSpace: 'pre-line' }}>
+                {notes}</p>
             </Block>
 
             {bp.materials.length > 0 && <Block title="Primary outputs & materials" icon={IcMaterial}>

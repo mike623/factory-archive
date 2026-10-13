@@ -13,6 +13,7 @@
 
 - **Your real blueprint library.** It reads the `.sbp`/`.sbpcfg` files in your game folder and groups them by **world session**. It opens on the world you're currently playing, detected from your latest autosave.
 - **Import from a link.** Paste a [SCIM](https://satisfactory-calculator.com/en/blueprints) page, a [Satisfactory Blueprints](https://satisfactoryblueprints.com/) page or a direct `.sbp` URL, and the blueprint is downloaded straight into your world. The page's **picture, title, description, author, tags and source link** are saved alongside it.
+- **Blueprint breakdown.** See the size, **material cost** and **buildings** (e.g. 3 × Foundry, 16 × Conveyor Belt Mk.4) of any blueprint, read from the `.sbp` file itself. It works for every blueprint, wherever it came from, and works offline.
 - **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
 - **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
 - **Share on LAN** for multiplayer. Friends on your network open a web page from your app to browse and download your blueprints, or to paste a link that goes straight into the world you're hosting.
@@ -75,6 +76,16 @@ Along with the files, the app saves the page's **picture, title, description, au
 
 They're keyed by a hash of the blueprint's contents, so they follow it when you copy or rename it.
 
+### Blueprint breakdown
+
+A blueprint's detail page shows what it contains, read directly from its files:
+- **Size:** the blueprint's dimensions, as stored in the file.
+- **Materials:** the build cost.
+- **Buildings:** each building type and how many.
+- **Description and color:** the author's description and color from the `.sbpcfg`.
+
+The format was worked out from real Satisfactory 1.0 blueprints (save version 52). Every read is bounds-checked, and the object list is checked against the size the file declares. If a file can't be read, the app says so instead of showing guessed numbers. Names come from a table of in-game names where the internal class name differs (e.g. `Desc_Cement_C` → Concrete); other names are derived from the class name.
+
 ### Multiplayer: Share on LAN
 
 Blueprints belong to the world, so in multiplayer they live on the **host's** machine. Players who join a world see the host's blueprints, not their own.
@@ -115,7 +126,8 @@ Browser-preview helpers: `?empty` shows the first-run screen, and `?disk` previe
 ### Test and check
 
 ```bash
-cd app/src-tauri && cargo test     # file handling, link import (against a local stand-in site), share server, metadata
+cd app/src-tauri && cargo test     # file handling, link import (local stand-in site), share server, metadata, .sbp parsing
+FA_SAMPLE_SBP=/path/to/a.sbp cargo test real_sample -- --nocapture   # optional: parse a real blueprint
 cd app && npx tsc --noEmit         # TypeScript
 cd app && npx vite build           # frontend build
 ```
@@ -139,6 +151,7 @@ app/
     src/blueprints.rs     reading, writing, importing and copying blueprint files; session detection
     src/resolve.rs        link import: download, page links, link-preview tags, safety checks
     src/meta.rs           details and picture store, keyed by .sbp hash
+    src/sbp.rs            .sbp/.sbpcfg reader: size, cost, buildings, description
     src/share.rs          Share on LAN web server
     src/share.html        the page friends see
     tauri.conf.json       app config and updater public key
@@ -162,7 +175,7 @@ Issues and pull requests are welcome.
 
 ## Roadmap
 
-- **Blueprint breakdown:** material cost and buildings, read from the `.sbp` file itself.
+- Building power use and the breakdown's raw-resource totals, which need game recipe data.
 - Code-signed Windows and macOS builds.
 - Live refresh in-game without reloading the save. This probably needs a game mod.
 

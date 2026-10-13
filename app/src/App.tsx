@@ -238,7 +238,8 @@ export default function App() {
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
-              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} />
+              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder}
+              root={gameFolder.current?.path ?? null} />
           </main>
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {!showEmpty && <TopBar query={query} setQuery={setQuery} searchRef={searchRef} view={view} setView={setView}

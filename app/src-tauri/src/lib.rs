@@ -1,5 +1,6 @@
 mod blueprints;
 mod meta;
+mod sbp;
 mod resolve;
 mod share;
 
@@ -154,6 +155,28 @@ struct LibSession {
     blueprints: Vec<LibFile>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BlueprintInfo {
+    breakdown: Option<sbp::Breakdown>,
+    /// why the .sbp couldn't be read, if it couldn't
+    error: Option<String>,
+    /// description, icon and color from the .sbpcfg, if present and readable
+    config: Option<sbp::BlueprintConfig>,
+}
+
+/// What a blueprint contains (size, material cost, buildings), read from its own files.
+#[tauri::command]
+fn blueprint_info(root: String, session: String, name: String) -> BlueprintInfo {
+    let root = PathBuf::from(root);
+    let (breakdown, error) = match blueprints::read_file(&root, &session, &name, "sbp") {
+        Ok(b) => match sbp::parse_sbp(&b) { Ok(x) => (Some(x), None), Err(e) => (None, Some(e)) },
+        Err(e) => (None, Some(e.to_string())),
+    };
+    let config = blueprints::read_file(&root, &session, &name, "sbpcfg").ok().and_then(|b| sbp::parse_cfg(&b).ok());
+    BlueprintInfo { breakdown, error, config }
+}
+
 /// A blueprint's saved picture as a data: URL.
 #[tauri::command]
 fn blueprint_image(store: tauri::State<'_, MetaStore>, key: String) -> Option<String> {
@@ -241,7 +264,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

@@ -42,7 +42,7 @@ export function toBlueprint(session: string, f: DiskFile): Blueprint {
     seed: h % 997,
     sizeKB: f.size ? Math.max(1, Math.round(f.size / 1024)) : 0,
     added: f.modified ? new Date(f.modified * 1000).toISOString().slice(0, 10) : '',
-    notes: m?.description || `Saved in the “${session}” world. Satisfactory loads it when that session is loaded.`,
+    notes: m?.description ?? '', // empty: the detail page falls back to the .sbpcfg description
     url: m?.sourceUrl ?? '',
     session,
     onDisk: true,

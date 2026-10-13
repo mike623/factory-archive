@@ -28,6 +28,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
   - `blueprints.rs`: blueprint files and world sessions.
   - `resolve.rs`: link import.
   - `meta.rs`: details and picture store.
+  - `sbp.rs`: `.sbp`/`.sbpcfg` reader (size, cost, buildings, description). The layout is documented at the top of the file; keep its bounds checks and size validation.
   - `share.rs` + `share.html`: the LAN share server and the page it serves.
 - `design/`: the original Claude Design prototype. Treat it as reference, not code to edit.
 - `.github/workflows/`: `desktop-build.yml` (every push) and `release.yml` (releases).
@@ -48,7 +49,8 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 4. **Share server** (`share.rs`) has no authentication by design. Keep its protections intact: the Host-header check (DNS rebinding), JSON-only POSTs (CSRF), body size limits and path validation. Link imports from it must keep refusing local and private addresses (`resolve::host_allowed`).
 5. **Signing keys:** never print, log or commit `TAURI_SIGNING_PRIVATE_KEY` or its password. The public key lives in `tauri.conf.json` → `plugins.updater.pubkey`. Changing it breaks updates for installed copies unless the release secrets change to match.
 6. **Metadata** (pictures, page details) goes in the app data folder via `MetaStore`, never next to the game's files.
-7. Don't scrape site-specific markup you haven't verified. Link import relies only on HTTP facts (file names, `Content-Disposition`, content type) and standard link-preview tags.
+7. Don't commit third-party blueprint files as fixtures; build synthetic ones in tests (see `sbp.rs`). To check against a real file, set `FA_SAMPLE_SBP`.
+8. Don't scrape site-specific markup you haven't verified. Link import relies only on HTTP facts (file names, `Content-Disposition`, content type) and standard link-preview tags.
 
 ## Game facts the code relies on
 
