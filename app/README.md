@@ -115,15 +115,21 @@ All screens from the design, with both light and dark themes:
 
 Changes from the prototype: the fake macOS window frame, the scale-to-fit stage, the "Library / First-run" demo switch and the Claude Design Tweaks panel are gone. The app fills the native window, and the theme toggle sits in the sidebar footer and is remembered.
 
-## Still mocked
+## Real vs. still mocked
 
-- **Library data** is real in the desktop app (files on disk). The sample set in `src/data.ts` only shows up in the browser preview.
-- **Link import** isn't built yet. In the app, Import returns a fixed preview (`mockResolve` in `src/modals.tsx`). On the share page, `resolve` in `src-tauri/src/resolve.rs` reports "not available yet" so no fake files are ever written. Neither site documents its download links, so this needs the real pages examined first.
-- **Export** simulates copy progress. It doesn't write any files yet.
-- **Real and tested (`cargo test`):** the share server (`share.rs`), reading, writing and detecting world sessions (`blueprints.rs`), and source detection (`resolve.rs`).
-- **Game folder detection is real.** The Rust command `game_folders` in `src-tauri/src/lib.rs` returns the Windows folder or the CrossOver bottles, and its unit tests run with `cargo test`.
+**Real in the desktop app:**
+- **Library:** the `.sbp` files in your game folder, every world session, with the World session filter.
+- **Add local files:** **Browse local files** (empty state or the Import dialog), or drop `.sbp`/`.sbpcfg` files anywhere on the window. They go into the world shown in the filter, or the current save if the filter shows all sessions. Pairs are matched by name, nothing is overwritten, and a lone `.sbpcfg` is rejected.
+- **Copy to another world:** tick blueprints, then choose **Copy N to another world** and pick the target session. It copies the `.sbp` and its `.sbpcfg` if present, skips blueprints already in that world, never overwrites, and creates the session folder if needed.
+- **Favorites and Import Queue** are remembered between launches. Import Queue lists blueprints added through the app: local files, copies and friends' imports.
+- **Open folder**, **Share on LAN**, **current-world detection**, **auto-update** and **game folder detection** (Windows and CrossOver).
+- Unit tests (`cargo test`) cover reading, writing, importing, copying, session detection and the share server.
 
-Next steps: persist the library (Tauri store or SQLite), fetch and parse blueprint URLs in Rust, and copy the `.sbp`/`.sbpcfg` pair into the chosen session folder.
+**Still mocked or missing:**
+- **Importing from SCIM or Satisfactory Blueprints links.** Both the Import dialog and the share page report "not available yet" and write nothing. Neither site documents its download links, and this needs the real pages examined first.
+- **Thumbnails** are generated placeholder art. Blueprint files don't include a preview image.
+- **Screenshots dropped on a detail page** show for that session only and aren't saved.
+- In the **browser preview** (`npm run dev`), everything uses sample data, and the export drawer simulates progress.
 
 ## Layout
 

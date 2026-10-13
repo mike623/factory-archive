@@ -9,7 +9,7 @@ const SOURCE_HINTS: [SourceId, string][] = [
   ['local', 'Drag in .sbp / .sbpcfg files'],
 ];
 
-export function EmptyState({ onImport }: { onImport: () => void }) {
+export function EmptyState({ onImport, onBrowse }: { onImport: () => void; onBrowse?: () => void }) {
   return (
     <div className="grid-bg" style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', padding: 40, position: 'relative', overflow: 'hidden' }}>
@@ -41,7 +41,8 @@ export function EmptyState({ onImport }: { onImport: () => void }) {
           into your game folder.</p>
         <div style={{ display: 'flex', gap: 11, justifyContent: 'center', marginTop: 24 }}>
           <Btn variant="primary" size="lg" icon={IcLink} onClick={onImport}>Import from URL</Btn>
-          <Btn variant="solid" size="lg" icon={IcUpload} disabled title="Local file import is coming soon">Browse local files</Btn>
+          <Btn variant="solid" size="lg" icon={IcUpload} onClick={onBrowse} disabled={!onBrowse}
+            title={onBrowse ? 'Add .sbp / .sbpcfg files to the current world' : 'Works in the desktop app'}>Browse local files</Btn>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 11, marginTop: 34, textAlign: 'left' }}>

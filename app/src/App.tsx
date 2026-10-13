@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { powerTotal, SAMPLE_LIBRARY, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn } from './components';
-import { IcExport } from './icons';
+import { IcCopy, IcExport } from './icons';
 import { EMPTY_FILTERS, FilterRail, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
@@ -11,7 +11,13 @@ import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
 import { toBlueprint, useDiskLibrary } from './diskLibrary';
-import { openFolder } from './platform';
+import { CopyDrawer } from './copyDrawer';
+import { Notices, useNotices } from './notices';
+import { usePersistent } from './persist';
+import { isTauri } from '@tauri-apps/api/core';
+import {
+  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, type Outcome,
+} from './platform';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
 import { UpdateBanner } from './UpdateBanner';
@@ -62,9 +68,13 @@ export default function App() {
   // browser preview: sample data spread over two pretend worlds; the desktop app reads real files instead
   const [library, setLibrary] = useState<Blueprint[]>(() => START_EMPTY ? [] : PREVIEW_DISK ? DISK_DEMO :
     SAMPLE_LIBRARY.map((b, i) => ({ ...b, session: i < 8 ? 'Preview World' : 'Old World' })));
-  const [imported, setImported] = useState<string[]>([]);
-  const [favs, setFavs] = useState<Set<string>>(
-    () => new Set(SAMPLE_LIBRARY.filter(b => b.status === 'installed').map(b => b.id)));
+  // remembered on this machine between launches
+  const [imported, setImported] = usePersistent<string[]>('fa-imported', () => []);
+  const [favList, setFavList] = usePersistent<string[]>('fa-favorites',
+    () => isTauri() ? [] : SAMPLE_LIBRARY.filter(b => b.status === 'installed').map(b => b.id));
+  const favs = useMemo(() => new Set(favList), [favList]);
+  const notices = useNotices();
+  const [dropping, setDropping] = useState(false);
   const [nav, setNav] = useState<NavId>('library');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -128,6 +138,56 @@ export default function App() {
   const openBlueprintFolder = (b: Blueprint) => {
     if (gameFolder.current) openFolder(gameFolder.current.path, b.session).catch(console.error);
   };
+  const rememberImported = (ids: string[]) => setImported(list => [...ids, ...list.filter(x => !ids.includes(x))].slice(0, 100));
+
+  // where "add files" goes: the world shown in the filter, else the current save
+  const importTarget = sessionFilter ?? currentSession;
+  const addFiles = async (add: (root: string, session: string) => Promise<Outcome[]>) => {
+    const root = gameFolder.current?.path;
+    if (!root) { notices.push({ tone: 'warn', title: 'Satisfactory folder not found', detail: 'Choose it with the folder card in the sidebar.' }); return; }
+    if (!importTarget) { notices.push({ tone: 'warn', title: 'Pick a world session first', detail: 'Choose one under World session in the filters.' }); return; }
+    try {
+      const out = await add(root, importTarget);
+      notices.report('Added', importTarget, out);
+      rememberImported(out.filter(o => o.ok).map(o => `disk:${importTarget}/${o.name}`));
+      disk.reload();
+    } catch (e) { notices.push({ tone: 'warn', title: "Couldn't add the files", detail: String(e) }); }
+  };
+  const browseFiles = async () => {
+    const paths = await pickBlueprintFiles();
+    if (paths.length) addFiles((root, session) => importFiles(root, session, paths));
+  };
+  const copyToWorld = async (target: string) => {
+    const root = gameFolder.current?.path;
+    if (!root) throw new Error('Satisfactory folder not found');
+    const todo = selItems.filter(b => b.session && b.session !== target);
+    const out = await copyBlueprints(root, todo.map(b => [b.session!, b.name]), target);
+    rememberImported(out.filter(o => o.ok).map(o => `disk:${target}/${o.name}`));
+    disk.reload();
+    return out;
+  };
+
+  // friends' imports through the share page land in Import Queue too
+  const lastShared = share.imports[0];
+  useEffect(() => { if (lastShared) rememberImported([`disk:${lastShared.session}/${lastShared.name}`]); }, [lastShared]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // drop .sbp / .sbpcfg files anywhere on the window to add them to the current world
+  useEffect(() => {
+    if (!isTauri()) return;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+    const over = (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); setDropping(true); } };
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDropping(false); };
+    const drop = (e: DragEvent) => {
+      setDropping(false);
+      const files = [...(e.dataTransfer?.files ?? [])].filter(f => isBlueprintFile(f.name));
+      if (!files.length) return; // images etc. are handled by the gallery
+      e.preventDefault();
+      addFiles((root, session) => importDropped(root, session, files));
+    };
+    addEventListener('dragover', over); addEventListener('dragleave', leave); addEventListener('drop', drop);
+    return () => { removeEventListener('dragover', over); removeEventListener('dragleave', leave); removeEventListener('drop', drop); };
+  });
+
   const addBlueprint = (b: Blueprint) => {
     setLibrary(l => [b, ...l]);
     setImported(ids => [b.id, ...ids]);
@@ -136,18 +196,21 @@ export default function App() {
     setLibrary(l => l.map(b => ids.includes(b.id) ? { ...b, status: 'installed' } : b));
     setSel(new Set());
   };
-  const toggleFav = (id: string) => setFavs(f => {
-    const n = new Set(f); if (n.has(id)) n.delete(id); else n.add(id); return n;
-  });
+  const toggleFav = (id: string) => setFavList(f => f.includes(id) ? f.filter(x => x !== id) : [id, ...f]);
 
   const showEmpty = items.length === 0;
-  const counts = { library: items.length, import: imported.length, favorites: favs.size };
+  const counts = {
+    library: items.length,
+    import: items.filter(b => imported.includes(b.id)).length,
+    favorites: items.filter(b => favs.has(b.id)).length,
+  };
+  const copyMode = selItems.length > 0 && selItems.every(b => b.onDisk);
 
   return (
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={metadata} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -165,7 +228,7 @@ export default function App() {
                 session={{ options: sessionOptions, current: currentSession, value: sessionFilter, onChange: setSessionChoice }} />}
               <div className="grid-bg" style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: 'var(--bg)' }}>
                 {showEmpty
-                  ? <EmptyState onImport={() => setImportOpen(true)} />
+                  ? <EmptyState onImport={() => setImportOpen(true)} onBrowse={isTauri() ? browseFiles : undefined} />
                   : scoped.length === 0
                     ? <NoResults title={`Nothing in ${NAV_TITLES[nav]} yet`}
                         hint={nav === 'import' ? 'Blueprints you import show up here.' : 'Star a blueprint from its detail page.'} />
@@ -193,14 +256,27 @@ export default function App() {
         <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
         <button onClick={() => setSel(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-mute)',
           fontSize: 12.5, fontFamily: 'var(--font-display)' }}>Clear</button>
-        <Btn variant="primary" icon={IcExport} onClick={() => setExportOpen(true)}>Export {sel.size} to game folder</Btn>
+        <Btn variant="primary" icon={copyMode ? IcCopy : IcExport} onClick={() => setExportOpen(true)}>
+          {copyMode ? `Copy ${sel.size} to another world` : `Export ${sel.size} to game folder`}</Btn>
       </div>}
 
       <UpdateBanner />
       <ImportToasts share={share} />
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint} />
-      <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}
-        onRemove={toggleSel} onExported={markInstalled} />
+      <Notices list={notices.list} dismiss={notices.dismiss} />
+      {dropping && <div style={{ position: 'fixed', inset: 0, zIndex: 80, pointerEvents: 'none', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', background: 'rgba(5,6,8,.55)', border: '3px dashed var(--accent)' }}>
+        <div style={{ padding: '16px 22px', borderRadius: 12, background: 'var(--panel)', border: '1px solid var(--accent-line)',
+          fontSize: 15, fontWeight: 600 }}>
+          {importTarget ? <>Drop .sbp files to add them to <span style={{ color: 'var(--accent)' }}>{importTarget}</span></> : 'Pick a world session first'}
+        </div></div>}
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
+        onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget} />
+      {copyMode
+        ? <CopyDrawer open={exportOpen} items={selItems} sessions={sessionOptions.map(o => o.name)} defaultTarget={currentSession}
+            onClose={() => { setExportOpen(false); }} onRemove={toggleSel} onCopy={copyToWorld}
+            onOpenTarget={t => gameFolder.current && openFolder(gameFolder.current.path, t).catch(console.error)} />
+        : <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}
+            onRemove={toggleSel} onExported={markInstalled} />}
     </div>
   );
 }

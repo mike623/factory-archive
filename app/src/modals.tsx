@@ -38,7 +38,11 @@ function mockResolve(src: SourceId, url: string): Blueprint {
 
 type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed';
 
-export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void }) {
+export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
+  open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void;
+  /** desktop app: pick local .sbp files instead (they go to `target`) */
+  onBrowse?: () => void; target?: string | null;
+}) {
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const [step, setStep] = useState(0);
@@ -118,10 +122,14 @@ export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: 
                   <IcPlus size={14} style={{ color: 'var(--text-mute)' }} />
                 </button>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 11, borderRadius: 'var(--r)',
+              <button onClick={onBrowse} disabled={!onBrowse} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 11,
+                borderRadius: 'var(--r)', background: 'transparent', textAlign: 'left', cursor: onBrowse ? 'pointer' : 'default',
                 border: '1.5px dashed var(--border-strong)', color: 'var(--text-mute)', marginTop: 2 }}>
-                <IcUpload size={16} /><span style={{ fontSize: 12 }}>…or drop a local <span className="mono">.sbp</span> / <span className="mono">.sbpcfg</span> file here</span>
-              </div>
+                <IcUpload size={16} /><span style={{ fontSize: 12, flex: 1 }}>
+                  …or <span style={{ color: onBrowse ? 'var(--accent-bright)' : undefined }}>browse</span> for local <span className="mono">.sbp</span> / <span className="mono">.sbpcfg</span> files, or drop them anywhere on the window
+                  {onBrowse && target && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>They'll be added to <strong style={{ color: 'var(--text-dim)' }}>{target}</strong></span>}
+                  {!onBrowse && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>Desktop app only</span>}</span>
+              </button>
             </div>
           </div>}
 

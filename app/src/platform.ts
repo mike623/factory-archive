@@ -90,3 +90,32 @@ export async function openFolder(root: string, session?: string | null): Promise
   if (!isTauri()) throw new Error('Opening folders works in the desktop app');
   await invoke<string>('open_folder', { root, session: session ?? null });
 }
+
+/* ---------- adding and copying real blueprint files ---------- */
+
+export interface Outcome { name: string; ok: boolean; error: string | null }
+
+/** Native file picker for .sbp / .sbpcfg files; returns absolute paths (empty if cancelled). */
+export async function pickBlueprintFiles(): Promise<string[]> {
+  if (!isTauri()) return [];
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ multiple: true, title: 'Add blueprint files',
+    filters: [{ name: 'Satisfactory blueprint', extensions: ['sbp', 'sbpcfg'] }] });
+  return Array.isArray(picked) ? picked : picked ? [picked] : [];
+}
+
+export async function importFiles(root: string, session: string, paths: string[]): Promise<Outcome[]> {
+  return invoke<Outcome[]>('import_files', { root, session, paths });
+}
+
+/** Files dropped onto the window (read in the page, sent as bytes). */
+export async function importDropped(root: string, session: string, files: File[]): Promise<Outcome[]> {
+  const payload = await Promise.all(files.map(async f => [f.name, Array.from(new Uint8Array(await f.arrayBuffer()))] as const));
+  return invoke<Outcome[]>('import_bytes', { root, session, files: payload });
+}
+
+export async function copyBlueprints(root: string, items: [session: string, name: string][], target: string): Promise<Outcome[]> {
+  return invoke<Outcome[]>('copy_blueprints', { root, items, target });
+}
+
+export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);

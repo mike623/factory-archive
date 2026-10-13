@@ -91,7 +91,7 @@ export function BlueprintCard({ bp, selected, onSelect, onOpen }: ItemProps) {
         <div style={{ position: 'absolute', top: 9, left: 9, right: 9, display: 'flex', justifyContent: 'space-between',
           alignItems: 'flex-start', pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto', opacity: hover || selected ? 1 : 0, transition: 'opacity .15s' }}>
-            {!bp.onDisk && <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />}
+            <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />
           </div>
           <SourceBadge src={bp.source} />
         </div>
@@ -146,7 +146,7 @@ export function BlueprintRow({ bp, selected, onSelect, onOpen }: ItemProps) {
       background: selected ? 'var(--accent-ghost)' : hover ? 'var(--panel)' : 'transparent', transition: 'background .12s' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         <div style={{ opacity: hover || selected ? 1 : .25, transition: 'opacity .15s' }}>
-          {bp.onDisk ? <span style={{ display: 'block', width: 18 }} /> : <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />}</div>
+          <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} /></div>
         <div style={{ width: 64, height: 42, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
           border: '1px solid var(--border)' }}><Thumb hue={bp.hue} seed={bp.seed} label="" /></div>
         <div style={{ minWidth: 0 }}>

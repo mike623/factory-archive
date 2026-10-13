@@ -127,6 +127,26 @@ fn library(root: String) -> Vec<blueprints::Session> {
     blueprints::list_sessions(&PathBuf::from(root))
 }
 
+/// Add .sbp/.sbpcfg files picked from anywhere on disk to a world session.
+#[tauri::command]
+fn import_files(root: String, session: String, paths: Vec<String>) -> Vec<blueprints::Outcome> {
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    blueprints::import_paths(&PathBuf::from(root), &session, &paths)
+}
+
+/// Add .sbp/.sbpcfg files dropped onto the window (sent as bytes) to a world session.
+#[tauri::command]
+fn import_bytes(root: String, session: String, files: Vec<(String, Vec<u8>)>) -> Vec<blueprints::Outcome> {
+    blueprints::import_named(&PathBuf::from(root), &session, files)
+}
+
+/// Copy blueprints (`(session, name)` pairs) into another world session.
+#[tauri::command]
+fn copy_blueprints(root: String, items: Vec<(String, String)>, target: String) -> Vec<blueprints::Outcome> {
+    let root = PathBuf::from(root);
+    items.iter().map(|(from, name)| blueprints::copy_outcome(&root, from, name, &target)).collect()
+}
+
 /// Resolve a SCIM / Satisfactory Blueprints / direct link. Not built yet: always reports why.
 #[tauri::command]
 fn resolve_link(url: String) -> Result<String, String> {
@@ -152,7 +172,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, resolve_link, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, resolve_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

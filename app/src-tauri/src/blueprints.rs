@@ -180,6 +180,80 @@ pub fn write_blueprint(root: &Path, session: &str, name: &str, sbp: &[u8], cfg: 
     Ok(())
 }
 
+/// Result of adding one blueprint, for the UI to report.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Outcome {
+    pub name: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+impl Outcome {
+    fn from(name: &str, r: Result<(), BpError>) -> Self {
+        match r {
+            Ok(()) => Outcome { name: name.into(), ok: true, error: None },
+            Err(e) => Outcome { name: name.into(), ok: false, error: Some(e.to_string()) },
+        }
+    }
+}
+
+/// Add blueprint files given as `(file name, bytes)` to `session`, pairing `X.sbp` with `X.sbpcfg`.
+/// Files with other extensions are ignored; a lone `.sbpcfg` is reported, since `.sbp` is required.
+pub fn import_named(root: &Path, session: &str, files: Vec<(String, Vec<u8>)>) -> Vec<Outcome> {
+    let mut pairs: BTreeMap<String, (Option<Vec<u8>>, Option<Vec<u8>>)> = BTreeMap::new();
+    for (file, bytes) in files {
+        let Some((stem, ext)) = file.rsplit_once('.') else { continue };
+        let entry = pairs.entry(stem.to_string()).or_default();
+        match ext.to_ascii_lowercase().as_str() {
+            "sbp" => entry.0 = Some(bytes),
+            "sbpcfg" => entry.1 = Some(bytes),
+            _ => {}
+        }
+    }
+    pairs
+        .into_iter()
+        .filter(|(_, (sbp, cfg))| sbp.is_some() || cfg.is_some())
+        .map(|(name, (sbp, cfg))| match sbp {
+            None => Outcome { name, ok: false, error: Some("missing the .sbp file (the .sbpcfg alone isn't a blueprint)".into()) },
+            Some(sbp) => {
+                let r = write_blueprint(root, session, &name, &sbp, cfg.as_deref(), true);
+                Outcome::from(&name, r)
+            }
+        })
+        .collect()
+}
+
+/// Read blueprint files from anywhere on disk (e.g. Downloads) and add them to `session`.
+pub fn import_paths(root: &Path, session: &str, paths: &[PathBuf]) -> Vec<Outcome> {
+    let mut files = Vec::new();
+    let mut failed = Vec::new();
+    for p in paths {
+        let Some(file) = p.file_name().map(|f| f.to_string_lossy().into_owned()) else { continue };
+        let ext_ok = p.extension().map(|e| is_blueprint_ext(&e.to_string_lossy().to_ascii_lowercase())) == Some(true);
+        if !ext_ok { continue; }
+        match fs::read(p) {
+            Ok(b) => files.push((file, b)),
+            Err(e) => failed.push(Outcome { name: file, ok: false, error: Some(e.to_string()) }),
+        }
+    }
+    let mut out = import_named(root, session, files);
+    out.extend(failed);
+    out
+}
+
+/// Copy a blueprint (and its .sbpcfg if present) from one world session to another. Never overwrites.
+pub fn copy_between(root: &Path, from: &str, name: &str, to: &str) -> Result<(), BpError> {
+    if from == to { return Err(BpError::Exists); }
+    let sbp = read_file(root, from, name, "sbp")?;
+    let cfg = read_file(root, from, name, "sbpcfg").ok();
+    write_blueprint(root, to, name, &sbp, cfg.as_deref(), true)
+}
+
+pub fn copy_outcome(root: &Path, from: &str, name: &str, to: &str) -> Outcome {
+    Outcome::from(name, copy_between(root, from, name, to))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +319,45 @@ mod tests {
         assert_eq!(session_from_autosave("A_autosave_12"), Some("A"));
         assert_eq!(session_from_autosave("A_autosave_"), None);
         assert_eq!(session_from_autosave("A_autosave_x"), None);
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn imports_pairs_and_copies_between_worlds() {
+        let base = tmp("import");
+        let root = base.join("blueprints");
+        fs::create_dir_all(root.join("Old")).unwrap();
+
+        let out = import_named(&root, "New World", vec![
+            ("Steel.sbp".into(), b"S".to_vec()),
+            ("Steel.sbpcfg".into(), b"C".to_vec()),
+            ("Lonely.sbpcfg".into(), b"C".to_vec()),
+            ("readme.txt".into(), b"x".to_vec()),
+            ("../evil.sbp".into(), b"x".to_vec()),
+        ]);
+        let get = |n: &str| out.iter().find(|o| o.name == n).cloned().unwrap();
+        assert!(get("Steel").ok);
+        assert!(!get("Lonely").ok);
+        assert!(!get("../evil").ok);
+        assert_eq!(out.len(), 3);
+        assert_eq!(fs::read(root.join("New World/Steel.sbpcfg")).unwrap(), b"C");
+
+        // from paths on disk (e.g. Downloads)
+        let dl = base.join("Downloads");
+        fs::create_dir_all(&dl).unwrap();
+        fs::write(dl.join("Bus.sbp"), b"B").unwrap();
+        fs::write(dl.join("photo.png"), b"x").unwrap();
+        let out = import_paths(&root, "Old", &[dl.join("Bus.sbp"), dl.join("photo.png")]);
+        assert_eq!(out, vec![Outcome { name: "Bus".into(), ok: true, error: None }]);
+
+        // copy between worlds, with and without .sbpcfg, never overwriting
+        assert!(copy_outcome(&root, "New World", "Steel", "Old").ok);
+        assert_eq!(fs::read(root.join("Old/Steel.sbpcfg")).unwrap(), b"C");
+        assert!(copy_outcome(&root, "Old", "Bus", "Fresh").ok);
+        assert!(!root.join("Fresh/Bus.sbpcfg").exists());
+        assert!(!copy_outcome(&root, "Old", "Steel", "New World").ok);
+        assert!(!copy_outcome(&root, "Old", "Steel", "Old").ok);
+        assert!(!copy_outcome(&root, "Old", "Missing", "New World").ok);
         fs::remove_dir_all(&base).ok();
     }
 

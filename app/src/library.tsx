@@ -35,10 +35,12 @@ const footerBtn: CSSProperties = {
 };
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
   theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState; share: ShareStateUI;
+  /** blueprint-site sources only mean something for site metadata */
+  showSources: boolean;
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
@@ -93,6 +95,7 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
           })}
         </nav>
 
+        {showSources && <>
         <div className="tlabel" style={{ padding: '18px 8px 8px' }}>Sources</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {Object.values(SOURCES).map(s => {
@@ -111,6 +114,7 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             );
           })}
         </div>
+        </>}
       </div>
 
       <div style={{ padding: '0 12px 10px' }}>
