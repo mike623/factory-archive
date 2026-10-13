@@ -75,4 +75,5 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
-          args: ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          # a config file, not inline JSON: npm on Windows runs through cmd.exe, which mangles the quotes
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
