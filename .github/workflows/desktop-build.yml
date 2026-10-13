@@ -66,7 +66,21 @@ jobs:
             echo "::warning title=Signing key check failed (key length ${#TAURI_SIGNING_PRIVATE_KEY}, password set: $pw)::$msg"
             exit 1
           fi
-      - run: npx tauri build ${{ matrix.args }}
+      # Same settings as Release (signed updater packages), so release problems show up on every push.
+      # On failure, the error lines are posted as annotations (readable without a login).
+      - name: Build (release settings)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          if ! npx tauri build ${{ matrix.args }} --config src-tauri/tauri.release.conf.json < /dev/null 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            grep -iE 'error|failed|cannot|not found|panicked' "$RUNNER_TEMP/build.log" | grep -v 'warning' | tail -n 15 | while IFS= read -r line; do
+              echo "::error title=tauri build::$(printf '%s' "$line" | sed 's/%/%25/g' | cut -c1-400)"
+            done
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
