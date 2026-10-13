@@ -1,0 +1,199 @@
+/* ============================================================
+   FACTORY ARCHIVE — Satisfactory Blueprint Manager
+   Design system: dark graphite / amber FICSIT industrial
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* --- surfaces (cool graphite) --- */
+  --bg:          #0c0e11;
+  --bg-deep:     #08090b;
+  --panel:       #13161b;
+  --panel-2:     #181c22;
+  --panel-3:     #1f242c;
+  --raise:       #232932;
+
+  /* --- lines --- */
+  --border:        #262c35;
+  --border-soft:   #1c2128;
+  --border-strong: #333b46;
+
+  /* --- text --- */
+  --text:      #e7eaef;
+  --text-dim:  #9aa3af;
+  --text-mute: #687181;
+  --text-faint:#49515d;
+
+  /* --- amber accent (FICSIT) --- */
+  --accent:       #ffae3b;
+  --accent-bright:#ffc266;
+  --accent-press: #e8902b;
+  --accent-deep:  #c97417;
+  --accent-ghost: rgba(255,174,59,0.10);
+  --accent-line:  rgba(255,174,59,0.28);
+  --accent-glow:  rgba(255,174,59,0.35);
+
+  /* --- steel blue secondary --- */
+  --steel:      #6f93b8;
+  --steel-dim:  #45617e;
+  --steel-ghost:rgba(111,147,184,0.10);
+
+  /* --- status --- */
+  --ok:    #5ccb8e;
+  --ok-ghost: rgba(92,203,142,0.12);
+  --info:  #5b9bd5;
+  --info-ghost: rgba(91,155,213,0.12);
+  --warn:  #e8b34b;
+  --warn-ghost: rgba(232,179,75,0.12);
+  --off:   #6b7480;
+  --off-ghost: rgba(107,116,128,0.10);
+  --danger:#e06a5a;
+
+  /* --- radii --- */
+  --r-sm: 5px;
+  --r:    7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  --ease: cubic-bezier(.2,.7,.3,1);
+  --shadow: 0 10px 30px -8px rgba(0,0,0,.6);
+  --shadow-lg: 0 24px 60px -16px rgba(0,0,0,.7);
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* --- chrome / recessed surfaces (themeable) --- */
+  --well:        #0e1115;
+  --knob:        #0c0e11;
+  --track-off:   #222932;
+  --scroll:      #2a313b;
+  --scroll-hover:#3a434f;
+  --chrome:      linear-gradient(180deg,#14171c,#0f1216);
+  --stage:       radial-gradient(120% 120% at 50% 0%,#0c0e12,#050608 70%);
+  --stage-solid: #050608;
+  --floatbar:    rgba(20,23,28,.95);
+  --win-border:  #2c333d;
+  --win-shadow:  0 50px 130px -30px rgba(0,0,0,.85), 0 0 0 1px rgba(0,0,0,.6);
+}
+
+/* ============================================================
+   LIGHT THEME — warm paper / FICSIT amber on light graphite
+   ============================================================ */
+html[data-theme="light"] {
+  --bg:          #f3f1ec;
+  --bg-deep:     #e7e3db;
+  --panel:       #fdfcfa;
+  --panel-2:     #f7f5f0;
+  --panel-3:     #efece5;
+  --raise:       #ffffff;
+
+  --border:        #e1dcd3;
+  --border-soft:   #ece8e1;
+  --border-strong: #cfc8bc;
+
+  --text:      #23272e;
+  --text-dim:  #5a616c;
+  --text-mute: #868d99;
+  --text-faint:#aeb4be;
+
+  --accent:       #ef9311;
+  --accent-bright:#b5660a;
+  --accent-press: #d77f08;
+  --accent-deep:  #a85c08;
+  --accent-ghost: rgba(239,147,17,.12);
+  --accent-line:  rgba(239,147,17,.42);
+  --accent-glow:  rgba(239,147,17,.30);
+
+  --steel:      #3d6491;
+  --steel-dim:  #6f8caa;
+  --steel-ghost:rgba(61,100,145,.10);
+
+  --ok:    #1f9d57;
+  --ok-ghost: rgba(31,157,87,.12);
+  --info:  #2f7ec9;
+  --info-ghost: rgba(47,126,201,.12);
+  --warn:  #b5821a;
+  --warn-ghost: rgba(181,130,26,.14);
+  --off:   #8a929e;
+  --off-ghost: rgba(138,146,158,.12);
+  --danger:#cf4f3e;
+
+  --shadow:    0 10px 30px -8px rgba(40,33,16,.16);
+  --shadow-lg: 0 24px 60px -16px rgba(40,33,16,.20);
+
+  --well:        #edeae3;
+  --knob:        #ffffff;
+  --track-off:   #cfc8bc;
+  --scroll:      #cfc8bc;
+  --scroll-hover:#b8b0a3;
+  --chrome:      linear-gradient(180deg,#fbfaf7,#f1eee8);
+  --stage:       radial-gradient(120% 120% at 50% 0%,#edeae4,#d8d4cc 70%);
+  --stage-solid: #d8d4cc;
+  --floatbar:    rgba(253,252,250,.95);
+  --win-border:  #d2ccc1;
+  --win-shadow:  0 50px 130px -30px rgba(40,33,16,.30), 0 0 0 1px rgba(40,33,16,.08);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--stage-solid);
+  font-family: var(--font-display);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+#root { height: 100vh; }
+
+::selection { background: var(--accent-glow); color: #1a1206; }
+
+/* scrollbars */
+*::-webkit-scrollbar { width: 11px; height: 11px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll); border-radius: 20px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); background-clip: padding-box; }
+
+/* ---- shared utility classes ---- */
+.mono { font-family: var(--font-mono); }
+.tlabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  font-weight: 500;
+}
+
+/* technical grid texture */
+.grid-bg {
+  background-image:
+    linear-gradient(var(--border-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+  background-size: 26px 26px;
+  background-position: -1px -1px;
+}
+
+/* hazard stripe */
+.hazard {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--accent) 0 8px,
+    var(--bg) 8px 16px
+  );
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes scalein { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes drawerin { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes scan { from { background-position: 0 0; } to { background-position: 0 -100px; } }
+
+.fadein { animation: fadein .3s var(--ease) both; }
+
+button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; }
