@@ -8,6 +8,7 @@ import {
 } from './icons';
 import type { Theme } from './theme';
 import { tailPath } from './platform';
+import type { GameFolderState } from './gameFolder';
 
 export interface Filters {
   tags: string[];
@@ -27,11 +28,13 @@ const NAV: { id: NavId; label: string; icon: Icon }[] = [
 ];
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, folder }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
-  theme: Theme; onToggleTheme: () => void; folder: string;
+  theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState;
 }) {
+  const { current, loading, pickCustom: onPickFolder } = gameFolder;
+  const linked = !!current?.found;
   return (
     <aside style={{ width: 210, flexShrink: 0, background: 'var(--bg-deep)',
       borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
@@ -97,15 +100,18 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
 
       {/* sync footer */}
       <div style={{ padding: 12, borderTop: '1px solid var(--border-soft)', display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0, padding: '10px 11px', borderRadius: 'var(--r)', background: 'var(--panel)',
-          border: '1px solid var(--border)' }}>
+        <button onClick={onPickFolder} title={current ? `${current.path}\nClick to choose another folder` : 'Choose the blueprints folder'}
+          style={{ flex: 1, minWidth: 0, padding: '10px 11px', borderRadius: 'var(--r)', background: 'var(--panel)',
+          border: '1px solid var(--border)', textAlign: 'left', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
-            <Dot />
-            <span className="tlabel" title="Game folder linked" style={{ fontSize: 9, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>Folder linked</span>
+            <Dot color={linked ? 'var(--ok)' : 'var(--warn)'} />
+            <span className="tlabel" style={{ fontSize: 9, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+              {loading ? 'Scanning…' : linked ? 'Folder linked' : 'Game not found'}</span>
           </div>
-          <div className="mono" title={folder} style={{ fontSize: 9.5, color: 'var(--text-mute)', whiteSpace: 'nowrap',
-            overflow: 'hidden', textOverflow: 'ellipsis' }}>{tailPath(folder, 2)}</div>
-        </div>
+          <div className="mono" style={{ fontSize: 9.5, color: 'var(--text-mute)', whiteSpace: 'nowrap',
+            overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {!current ? 'Choose folder…' : current.kind === 'crossover' ? current.label : tailPath(current.path, 2)}</div>
+        </button>
         <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           style={{ width: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',

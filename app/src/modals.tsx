@@ -7,6 +7,7 @@ import {
   IcUser, IcWarn, type Icon,
 } from './icons';
 import { tailPath } from './platform';
+import type { GameFolderState } from './gameFolder';
 
 export function detectSource(url: string): SourceId | null {
   const u = url.trim().toLowerCase();
@@ -203,10 +204,11 @@ function Meta({ icon: Ic, children }: { icon: Icon; children: ReactNode }) {
 /* ============ EXPORT DRAWER ============ */
 type ExportPhase = 'idle' | 'running' | 'done';
 
-export function ExportDrawer({ open, items, folder, onClose, onRemove, onExported }: {
-  open: boolean; items: Blueprint[]; folder: string; onClose: () => void;
+export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExported }: {
+  open: boolean; items: Blueprint[]; gameFolder: GameFolderState; onClose: () => void;
   onRemove: (id: string) => void; onExported: (ids: string[]) => void;
 }) {
+  const { folders, current, select, pickCustom } = gameFolder;
   const [phase, setPhase] = useState<ExportPhase>('idle');
   const [prog, setProg] = useState(0);
   const [exported, setExported] = useState<Blueprint[]>([]);
@@ -257,13 +259,26 @@ export function ExportDrawer({ open, items, folder, onClose, onRemove, onExporte
           {/* target */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 13, padding: '10px 11px',
             borderRadius: 'var(--r)', background: 'var(--bg-deep)', border: '1px solid var(--border)' }}>
-            <IcFolder size={16} style={{ color: 'var(--steel)' }} />
+            <IcFolder size={16} style={{ color: 'var(--steel)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="tlabel" style={{ fontSize: 8.5 }}>Target folder</div>
-              <div className="mono" title={folder} style={{ fontSize: 10.5, color: 'var(--text-dim)', whiteSpace: 'nowrap',
-                overflow: 'hidden', textOverflow: 'ellipsis' }}>{tailPath(folder, 4)}</div>
+              <div className="tlabel" style={{ fontSize: 8.5 }}>
+                Target folder{current && current.kind !== 'native' ? ` · ${current.label}` : ''}</div>
+              {folders.length > 1 && phase === 'idle'
+                ? <select value={current?.path ?? ''} aria-label="Target folder"
+                    onChange={e => { const f = folders.find(x => x.path === e.target.value); if (f) select(f); }}
+                    style={{ width: '100%', marginTop: 3, height: 24, padding: '0 4px', borderRadius: 5,
+                    background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)',
+                    fontFamily: 'var(--font-mono)', fontSize: 10.5, outline: 'none' }}>
+                    {folders.map(f => <option key={f.path} value={f.path}>{f.label}</option>)}
+                  </select>
+                : <div className="mono" title={current?.path} style={{ fontSize: 10.5, color: current ? 'var(--text-dim)' : 'var(--warn)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {current ? tailPath(current.path, 4) : 'Satisfactory not found — choose a folder'}</div>}
             </div>
-            <Dot />
+            {phase === 'idle' && <button onClick={pickCustom} style={{ height: 26, padding: '0 9px', borderRadius: 5, flexShrink: 0,
+              background: 'var(--well)', border: '1px solid var(--border)', color: 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)', fontSize: 10 }}>Change…</button>}
+            <Dot color={current?.found ? 'var(--ok)' : 'var(--warn)'} />
           </div>
         </div>
 
@@ -306,9 +321,11 @@ export function ExportDrawer({ open, items, folder, onClose, onRemove, onExporte
           {phase === 'done'
             ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ok)', fontSize: 13, fontWeight: 600 }}>
-                  <IcCheck size={18} />Exported {list.length} blueprint{list.length !== 1 ? 's' : ''}</div>
+                  <IcCheck size={18} /><span>Exported {list.length} blueprint{list.length !== 1 ? 's' : ''}
+                    <span style={{ display: 'block', marginTop: 2, fontSize: 11, fontWeight: 500, color: 'var(--text-mute)' }}>
+                      Reload your save in-game to see them</span></span></div>
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>
-            : <Btn variant="primary" full size="lg" icon={IcExport} disabled={!items.length || phase === 'running'} onClick={run}>
+            : <Btn variant="primary" full size="lg" icon={IcExport} disabled={!items.length || !current || phase === 'running'} onClick={run}>
                 {phase === 'running' ? 'Exporting…' : `Export ${items.length} to game folder`}</Btn>}
         </div>
       </div>

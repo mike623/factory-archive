@@ -9,7 +9,7 @@ import { BlueprintDetail } from './detail';
 import { ExportDrawer, ImportModal } from './modals';
 import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
-import { blueprintDir, DEFAULT_BLUEPRINT_DIR } from './platform';
+import { useGameFolder } from './gameFolder';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -59,10 +59,8 @@ export default function App() {
   const [sel, setSel] = useState<Set<string>>(() => new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [folder, setFolder] = useState(DEFAULT_BLUEPRINT_DIR);
+  const gameFolder = useGameFolder();
   const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { blueprintDir().then(setFolder); }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,7 +111,7 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} folder={folder} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -158,7 +156,7 @@ export default function App() {
       </div>}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint} />
-      <ExportDrawer open={exportOpen} items={selItems} folder={folder} onClose={() => setExportOpen(false)}
+      <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}
         onRemove={toggleSel} onExported={markInstalled} />
     </div>
   );

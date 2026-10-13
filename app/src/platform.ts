@@ -11,13 +11,34 @@ export function openExternal(url: string) {
   else window.open(url, '_blank', 'noopener');
 }
 
-/** Fallback shown in the browser preview, mirroring the Windows default. */
-export const DEFAULT_BLUEPRINT_DIR = '%LOCALAPPDATA%\\FactoryGame\\Saved\\SaveGames\\blueprints';
+export interface GameFolder {
+  kind: 'native' | 'crossover' | 'custom';
+  label: string;
+  path: string;
+  /** whether the game's FactoryGame data folder exists there */
+  found: boolean;
+}
 
-/** Satisfactory's blueprint root on this machine (per-session folders live underneath). */
-export async function blueprintDir(): Promise<string> {
-  if (!isTauri()) return DEFAULT_BLUEPRINT_DIR;
-  try { return await invoke<string>('blueprint_dir'); } catch { return DEFAULT_BLUEPRINT_DIR; }
+/** Shown in the browser preview, mirroring the Windows default. */
+const PREVIEW_FOLDERS: GameFolder[] = [
+  { kind: 'native', label: 'Windows', path: '%LOCALAPPDATA%\\FactoryGame\\Saved\\SaveGames\\blueprints', found: true },
+];
+
+/**
+ * Blueprint roots Satisfactory uses on this machine, best match first:
+ * the Windows profile folder, or every CrossOver bottle with the game on macOS.
+ */
+export async function findGameFolders(): Promise<GameFolder[]> {
+  if (!isTauri()) return PREVIEW_FOLDERS;
+  try { return await invoke<GameFolder[]>('game_folders'); } catch (e) { console.error(e); return []; }
+}
+
+/** Let the user point at a blueprints folder by hand (e.g. a bottle in a custom location). */
+export async function pickGameFolder(): Promise<GameFolder | null> {
+  if (!isTauri()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ directory: true, title: 'Choose the Satisfactory blueprints folder' });
+  return typeof path === 'string' ? { kind: 'custom', label: 'Custom folder', path, found: true } : null;
 }
 
 /** Shorten a long path to its last few segments: …\FactoryGame\Saved\SaveGames\blueprints */

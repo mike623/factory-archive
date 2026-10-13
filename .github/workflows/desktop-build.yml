@@ -1,0 +1,54 @@
+name: Desktop build
+
+on:
+  push:
+    branches: ['**']
+    paths: ['app/**', '.github/workflows/desktop-build.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: factory-archive-windows
+            args: ''
+            bundles: |
+              app/src-tauri/target/release/bundle/nsis/*.exe
+              app/src-tauri/target/release/bundle/msi/*.msi
+          - os: macos-latest
+            artifact: factory-archive-macos
+            args: '--target universal-apple-darwin --bundles dmg'
+            bundles: |
+              app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # universal macOS binaries need both architectures
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - run: npm ci
+      - run: npx tauri build ${{ matrix.args }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundles }}

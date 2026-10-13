@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Factory Archive — Blueprint Manager",
+        "title": "Factory Archive \u2014 Blueprint Manager",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -21,11 +21,13 @@
         "backgroundColor": "#0c0e11"
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,7 +36,13 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" }
-    }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "category": "Utility"
   }
 }
