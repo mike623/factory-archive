@@ -147,10 +147,26 @@ fn copy_blueprints(root: String, items: Vec<(String, String)>, target: String) -
     items.iter().map(|(from, name)| blueprints::copy_outcome(&root, from, name, &target)).collect()
 }
 
-/// Resolve a SCIM / Satisfactory Blueprints / direct link. Not built yet: always reports why.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkImport {
+    name: String,
+    session: String,
+    has_cfg: bool,
+    size_kb: u64,
+}
+
+/// Download a blueprint from a SCIM / Satisfactory Blueprints / direct link and add it to a world.
 #[tauri::command]
-fn resolve_link(url: String) -> Result<String, String> {
-    resolve::resolve(&url).map(|bp| bp.name)
+async fn import_link(root: String, session: String, url: String) -> Result<LinkImport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bp = resolve::resolve(&url)?;
+        blueprints::write_blueprint(&PathBuf::from(&root), &session, &bp.name, &bp.sbp, bp.cfg.as_deref(), true)
+            .map_err(|e| e.to_string())?;
+        Ok(LinkImport { size_kb: (bp.sbp.len() as u64).div_ceil(1024), has_cfg: bp.cfg.is_some(), name: bp.name, session })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Pin friends' imports to a session (`None` = follow the detected current world).
@@ -172,7 +188,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, resolve_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

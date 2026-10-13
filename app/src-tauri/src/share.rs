@@ -240,7 +240,7 @@ fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_i
             };
 
             match resolve::resolve(&input.url) {
-                Err(msg) => error(req, 501, &msg),
+                Err(msg) => error(req, 422, &msg),
                 Ok(bp) => match blueprints::write_blueprint(root, &target.name, &bp.name, &bp.sbp, bp.cfg.as_deref(), true) {
                     Ok(()) => {
                         on_import(ImportedEvent { name: bp.name.clone(), session: target.name.clone() });
@@ -318,9 +318,9 @@ mod tests {
         // imports: must be JSON, and unresolvable links are reported, never written
         assert_eq!(post(port, "/api/import", "text/plain", "{}").0, 415);
         let (st, body) = post(port, "/api/import", "application/json",
-            r#"{"url":"https://satisfactory-calculator.com/en/blueprints/index/details/id/5868/name/x"}"#);
-        assert_eq!(st, 501, "{body}");
-        assert!(body.contains("isn't available yet"));
+            r#"{"url":"http://127.0.0.1:9/not-allowed.sbp"}"#);
+        assert_eq!(st, 422, "{body}");
+        assert!(body.contains("local"), "{body}"); // friends can't make the host fetch local addresses
         assert_eq!(std::fs::read_dir(root.join("My World")).unwrap().count(), 1);
 
         state.stop();

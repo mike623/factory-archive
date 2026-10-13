@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { Blueprint } from './data';
 import { Btn, FilePair, HeaderGlyph, IconBtn, Thumb } from './components';
-import { IcCheck, IcClose, IcCopy, IcFolder, IcWarn } from './icons';
+import { IcCheck, IcClose, IcCopy, IcFolder, IcInfo, IcWarn } from './icons';
 import type { Outcome } from './platform';
 
 type Phase = 'idle' | 'running' | 'done';
@@ -80,7 +80,7 @@ export function CopyDrawer({ open, items, sessions, defaultTarget, onClose, onRe
           </label>
           {phase === 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9,
             fontSize: 11, color: 'var(--warn)' }}>
-            <IcWarn size={13} style={{ flexShrink: 0 }} />Close Satisfactory first, then load that world to see them</div>}
+            <IcInfo size={13} style={{ flexShrink: 0 }} />Then reload that save in-game to see them</div>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>

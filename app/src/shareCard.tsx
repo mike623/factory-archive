@@ -80,7 +80,7 @@ export function ImportToasts({ share }: { share: ShareStateUI }) {
           <IcShare size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 1 }} />
           <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.45 }}>
             A player added <strong>{i.name}</strong> to <strong>{i.session}</strong>.
-            <div style={{ color: 'var(--text-mute)', fontSize: 11.5 }}>Load the session again to see it in-game.</div>
+            <div style={{ color: 'var(--text-mute)', fontSize: 11.5 }}>Reload the save in-game to see it.</div>
           </div>
           <button onClick={() => share.dismiss(i.at)} aria-label="Dismiss"
             style={{ background: 'none', border: 'none', color: 'var(--text-mute)', display: 'flex', padding: 2 }}><IcClose size={14} /></button>

@@ -3,11 +3,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { dimsLabel, SOURCES, type Blueprint, type SourceId } from './data';
 import { Btn, Dot, FilePair, HeaderGlyph, IconBtn, MiniTag, SourceBadge, SourceMark, Thumb } from './components';
 import {
-  IcCheck, IcClose, IcDimensions, IcExport, IcFolder, IcLink, IcMachine, IcPlus, IcPower, IcSearch, IcUpload,
+  IcCheck, IcClose, IcDimensions, IcDownload, IcExport, IcInfo, IcFolder, IcLink, IcMachine, IcPlus, IcPower, IcSearch, IcUpload,
   IcUser, IcWarn, type Icon,
 } from './icons';
 import { openFolder, tailPath } from './platform';
-import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { GameFolderState } from './gameFolder';
 
 export function detectSource(url: string): SourceId | null {
@@ -36,10 +35,14 @@ function mockResolve(src: SourceId, url: string): Blueprint {
   };
 }
 
-type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed';
+type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed' | 'saved';
 
-export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
+export interface LinkImport { name: string; session: string; hasCfg: boolean; sizeKb: number }
+
+export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink }: {
   open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void;
+  /** desktop app: download the blueprint behind the link into `target` */
+  importLink?: (url: string) => Promise<LinkImport>;
   /** desktop app: pick local .sbp files instead (they go to `target`) */
   onBrowse?: () => void; target?: string | null;
 }) {
@@ -47,6 +50,7 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const [step, setStep] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  const [saved, setSaved] = useState<LinkImport | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<number[]>([]);
 
@@ -61,11 +65,16 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
 
   const resolve = async () => {
     if (!src || phase === 'resolving') return;
-    setPhase('resolving'); setStep(0); setFailure(null);
-    if (isTauri()) {
-      // the desktop app never adds placeholder data: it uses the real resolver, which reports what's missing
-      try { await invoke<string>('resolve_link', { url: url.trim() }); }
-      catch (e) { setFailure(String(e)); setPhase('failed'); return; }
+    setPhase('resolving'); setStep(0); setFailure(null); setSaved(null);
+    if (importLink) {
+      // desktop app: really download and save it; step through the checklist while that runs
+      let i = 0;
+      const t = window.setInterval(() => { i = Math.min(i + 1, STEPS.length - 1); setStep(i); }, 700);
+      timers.current.push(t);
+      try { setSaved(await importLink(url.trim())); setStep(STEPS.length); setPhase('saved'); }
+      catch (e) { setFailure(String(e).replace(/^Error: /, '')); setPhase('failed'); }
+      finally { clearInterval(t); }
+      return;
     }
     let i = 0;
     const t = window.setInterval(() => { i++; setStep(i); if (i >= STEPS.length) { clearInterval(t); setPhase('resolved'); } }, 480);
@@ -133,6 +142,19 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
             </div>
           </div>}
 
+          {phase === 'saved' && saved && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 10, padding: '13px 14px',
+            borderRadius: 'var(--r-md)', background: 'var(--ok-ghost)', border: '1px solid color-mix(in oklab,var(--ok) 30%,transparent)' }}>
+            <IcCheck size={18} style={{ color: 'var(--ok)', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5 }}>
+              <div>Added <strong>{saved.name}</strong> to <strong>{saved.session}</strong></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <FilePair files={{ sbp: true, sbpcfg: saved.hasCfg }} compact />
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-mute)' }}>{saved.sizeKb} KB</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-mute)', marginTop: 6 }}>Reload that save in-game to see it.</div>
+            </div>
+          </div>}
+
           {phase === 'failed' && failure && <div role="alert" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '12px 13px',
             borderRadius: 'var(--r)', background: 'var(--warn-ghost)', border: '1px solid color-mix(in oklab,var(--warn) 30%,transparent)',
             color: 'var(--warn)', fontSize: 12.5, lineHeight: 1.5 }}>
@@ -189,14 +211,18 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 19px',
           borderTop: '1px solid var(--border)' }}>
           <span className="tlabel" style={{ fontSize: 9, color: 'var(--text-faint)' }}>
-            {phase === 'done' ? '✓ Added to library' : 'Import adds to library — export to game folder separately'}</span>
+            {importLink
+              ? (target ? `Downloads into ${target}` : 'Pick a world session in the filters first')
+              : phase === 'done' ? '✓ Added to library' : 'Import adds to library — export to game folder separately'}</span>
           <div style={{ flex: 1 }} />
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          {phase === 'resolved' || phase === 'done'
+          {phase === 'saved'
+            ? <Btn variant="primary" icon={IcCheck} onClick={onClose}>Done</Btn>
+            : phase === 'resolved' || phase === 'done'
             ? <Btn variant="primary" icon={phase === 'done' ? IcCheck : IcPlus} disabled={phase === 'done'} onClick={add}>
                 {phase === 'done' ? 'Added' : 'Add to library'}</Btn>
-            : <Btn variant="primary" icon={IcSearch} disabled={!src || phase === 'resolving'} onClick={resolve}>
-                {phase === 'resolving' ? 'Resolving…' : 'Resolve link'}</Btn>}
+            : <Btn variant="primary" icon={importLink ? IcDownload : IcSearch} disabled={!src || phase === 'resolving' || (!!importLink && !target)} onClick={resolve}>
+                {phase === 'resolving' ? (importLink ? 'Downloading…' : 'Resolving…') : importLink ? 'Download & add' : 'Resolve link'}</Btn>}
         </div>
       </div>
     </div>
@@ -302,7 +328,7 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
           </div>
           {phase === 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9,
             fontSize: 11, color: 'var(--warn)' }}>
-            <IcWarn size={13} style={{ flexShrink: 0 }} />Close Satisfactory before exporting</div>}
+            <IcInfo size={13} style={{ flexShrink: 0 }} />After exporting, reload the save in-game to see them</div>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
@@ -346,7 +372,7 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ok)', fontSize: 13, fontWeight: 600 }}>
                   <IcCheck size={18} /><span>Exported {list.length} blueprint{list.length !== 1 ? 's' : ''}
                     <span style={{ display: 'block', marginTop: 2, fontSize: 11, fontWeight: 500, color: 'var(--text-mute)' }}>
-                      Start the game and load that session to see them</span></span></div>
+                      Reload that save in-game to see them</span></span></div>
                 {current && <Btn variant="ghost" icon={IcFolder} title="Open the target folder"
                   onClick={() => openFolder(current.path).catch(() => {})}>Open</Btn>}
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>

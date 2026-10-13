@@ -6,7 +6,7 @@ import { IcCopy, IcExport } from './icons';
 import { EMPTY_FILTERS, FilterRail, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
-import { ExportDrawer, ImportModal } from './modals';
+import { ExportDrawer, ImportModal, type LinkImport } from './modals';
 import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
@@ -14,7 +14,7 @@ import { toBlueprint, useDiskLibrary } from './diskLibrary';
 import { CopyDrawer } from './copyDrawer';
 import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
   copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, type Outcome,
 } from './platform';
@@ -153,6 +153,15 @@ export default function App() {
       disk.reload();
     } catch (e) { notices.push({ tone: 'warn', title: "Couldn't add the files", detail: String(e) }); }
   };
+  const importLink = async (url: string): Promise<LinkImport> => {
+    const root = gameFolder.current?.path;
+    if (!root) throw new Error('Satisfactory folder not found. Choose it with the folder card in the sidebar.');
+    if (!importTarget) throw new Error('Pick a world session in the filters first.');
+    const r = await invoke<LinkImport>('import_link', { root, session: importTarget, url });
+    rememberImported([`disk:${r.session}/${r.name}`]);
+    disk.reload();
+    return r;
+  };
   const browseFiles = async () => {
     const paths = await pickBlueprintFiles();
     if (paths.length) addFiles((root, session) => importFiles(root, session, paths));
@@ -270,7 +279,8 @@ export default function App() {
           {importTarget ? <>Drop .sbp files to add them to <span style={{ color: 'var(--accent)' }}>{importTarget}</span></> : 'Pick a world session first'}
         </div></div>}
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
-        onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget} />
+        onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
+        importLink={isTauri() ? importLink : undefined} />
       {copyMode
         ? <CopyDrawer open={exportOpen} items={selItems} sessions={sessionOptions.map(o => o.name)} defaultTarget={currentSession}
             onClose={() => { setExportOpen(false); }} onRemove={toggleSel} onCopy={copyToWorld}

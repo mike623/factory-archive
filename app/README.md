@@ -11,7 +11,7 @@ This is the desktop implementation of the **Factory Archive** design in `../proj
 
 On macOS the app scans every CrossOver bottle and lists each one that has Satisfactory data. A bottle is an ordinary folder, so the app can read and write it directly. If you keep bottles somewhere custom, click the folder card in the sidebar, or **Change…** in the export drawer, to choose the folder by hand. The app remembers your choice.
 
-**Close the game before exporting, then start it again.** Hosting guides and player reports say copying files while the game or server is running can fail, and that blueprints appear after a restart. ([G-Portal](https://www.g-portal.com/wiki/en/satisfactory-importing-and-exporting-blueprints-on-your-server/), [Shockbyte](https://shockbyte.com/help/knowledgebase/articles/how-to-upload-blueprints-to-your-satisfactory-server))
+**After adding blueprints, reload the save.** Go to the main menu and load the world again; there's no need to restart the game. This was confirmed in testing: new files appear once the host reloads. For a dedicated server, the hosting guides say to stop the server before copying files in, then start it again ([G-Portal](https://www.g-portal.com/wiki/en/satisfactory-importing-and-exporting-blueprints-on-your-server/), [Shockbyte](https://shockbyte.com/help/knowledgebase/articles/how-to-upload-blueprints-to-your-satisfactory-server)).
 
 **Blueprints belong to the world, not the player.** Each save session has its own `blueprints\<session name>\` folder on whichever machine runs the world: your PC when you host, the host's PC when you join a friend, or the server for a dedicated server. The folder name must match the session name exactly. A known bug can hide blueprints when the session name has spaces or special characters ([fix guide](https://wiki.indifferentbroccoli.com/Satisfactory/InvisibleBlueprintFix)). The `.sbp` is required; the `.sbpcfg` only holds the icon and description.
 
@@ -25,8 +25,8 @@ Blueprints live with the host's world, so the host's app can serve a small web p
 2. The first time, Windows Defender Firewall or macOS asks whether to allow incoming connections. Allow it on **private** networks.
 3. Friends open the link. They can:
    - **Browse and download** the host's blueprints, grouped by world session.
-   - **Paste a SCIM or Satisfactory Blueprints link**, which is written straight into the host's world folder. *Not working yet:* the link import isn't built (see below), so the page shows a clear "not available yet" message and writes nothing.
-4. The host gets a notification, then loads the session again to see the new blueprint.
+   - **Paste a SCIM, Satisfactory Blueprints or direct `.sbp` link.** The host's app downloads it and writes it straight into the current world's folder (see *Link import* below).
+4. The host gets a notification, then reloads the save to see the new blueprint.
 
 **Which world imports go into.** The app picks it automatically:
 - First, the world of the newest autosave. Satisfactory names autosaves `<session>_autosave_<n>.sav`, so the session name comes from the file name. That naming is from memory and hasn't been checked against the game.
@@ -75,6 +75,17 @@ In the desktop app the Library lists the actual `.sbp` files in the game's bluep
 - Files on disk carry only a name, size, date and whether the `.sbpcfg` exists, so the filters for site metadata (category, tags, game version, modded) are hidden for them.
 - A blueprint's detail page shows its world and real file names, and **Open folder** opens that world's folder.
 - Browser preview: `npm run dev` shows the sample data split across two pretend worlds. Add `?disk` to the URL to preview how real files look.
+
+## Link import (SCIM, Satisfactory Blueprints, direct .sbp)
+
+Paste a link in **Import**, or friends paste one on the share page. The app downloads the blueprint and adds it to the current world (or the world shown in the filter). It doesn't rely on any site's page layout:
+
+- **Direct `.sbp` / `.sbpcfg` links** are downloaded, along with the matching sibling file if one exists.
+- **Blueprint pages:** the app fetches the page and follows links that look like downloads. It keeps only responses that really are `.sbp`/`.sbpcfg` files, judged by file name or `Content-Disposition`, never HTML.
+- If no file is found (for example because the site needs a login or builds its links with JavaScript), it says so and writes nothing. Download the files in your browser and drop them on the app instead.
+- Downloads are capped at 25 MB. Links to this computer or the local network are refused, so friends on the share page can't make the host's app fetch internal addresses.
+
+Tested offline against a local stand-in site (`cargo test`). It hasn't been tested against the real SCIM or Satisfactory Blueprints pages, because those sites weren't reachable from the build environment. Try it with a real link, e.g. `https://satisfactory-calculator.com/en/blueprints/index/details/id/10327/name/SFS+Foundry+x3`.
 
 ## Open the blueprint folder
 
@@ -126,7 +137,6 @@ Changes from the prototype: the fake macOS window frame, the scale-to-fit stage,
 - Unit tests (`cargo test`) cover reading, writing, importing, copying, session detection and the share server.
 
 **Still mocked or missing:**
-- **Importing from SCIM or Satisfactory Blueprints links.** Both the Import dialog and the share page report "not available yet" and write nothing. Neither site documents its download links, and this needs the real pages examined first.
 - **Thumbnails** are generated placeholder art. Blueprint files don't include a preview image.
 - **Screenshots dropped on a detail page** show for that session only and aren't saved.
 - In the **browser preview** (`npm run dev`), everything uses sample data, and the export drawer simulates progress.
