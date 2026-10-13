@@ -29,6 +29,12 @@ export interface Blueprint {
   session?: string;
   /** true when this entry is a real .sbp file in the game folder */
   onDisk?: boolean;
+  /** content fingerprint; the saved picture is fetched with it */
+  imageKey?: string;
+  /** a picture URL to use directly (browser preview) */
+  imageUrl?: string;
+  /** title from the blueprint's web page, when it differs from the file name */
+  title?: string;
   // Metadata from blueprint sites. Files on disk don't carry it, so it can be missing.
   author?: string;
   gameVersion?: string;

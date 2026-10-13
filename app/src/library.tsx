@@ -188,11 +188,13 @@ export interface SessionFilter {
   onChange: (v: string | null) => void;
 }
 
-export function FilterRail({ filters, setFilters, counts, session, onReset, metadata }: {
+export function FilterRail({ filters, setFilters, counts, session, onReset, metadata, categories = CATEGORIES, tagOptions = ALL_TAGS }: {
   filters: Filters; setFilters: Dispatch<SetStateAction<Filters>>; counts: { shown: number; total: number };
   session: SessionFilter; onReset: () => void;
-  /** false when every blueprint comes from disk: hide filters for site-only metadata */
+  /** false when every blueprint comes from disk: hide filters only the sample data has (modded, version, install state) */
   metadata: boolean;
+  /** category / tag choices present in the library (from imported pages); defaults to the sample set */
+  categories?: string[]; tagOptions?: string[];
 }) {
   const toggleTag = (t: string) => setFilters(f => ({ ...f, tags: f.tags.includes(t) ? f.tags.filter(x => x !== t) : [...f.tags, t] }));
   const setCat = (c: string) => setFilters(f => ({ ...f, category: f.category === c ? null : c }));
@@ -229,9 +231,9 @@ export function FilterRail({ filters, setFilters, counts, session, onReset, meta
         </div>
       </Section>}
 
-      {metadata && <Section label="Category">
+      {categories.length > 0 && <Section label="Category">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {CATEGORIES.map(c => {
+          {categories.map(c => {
             const on = filters.category === c;
             return (
               <button key={c} onClick={() => setCat(c)} aria-pressed={on} style={{ display: 'flex', alignItems: 'center',
@@ -247,9 +249,9 @@ export function FilterRail({ filters, setFilters, counts, session, onReset, meta
         </div>
       </Section>}
 
-      {metadata && <Section label="Tags">
+      {tagOptions.length > 0 && <Section label="Tags">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {ALL_TAGS.map(t => <Tag key={t} active={filters.tags.includes(t)} onClick={() => toggleTag(t)}>{t}</Tag>)}
+          {tagOptions.map(t => <Tag key={t} active={filters.tags.includes(t)} onClick={() => toggleTag(t)}>{t}</Tag>)}
         </div>
       </Section>}
 

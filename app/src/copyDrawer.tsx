@@ -1,7 +1,8 @@
 // copyDrawer.tsx — copy selected on-disk blueprints into another world session
 import { useEffect, useState } from 'react';
 import type { Blueprint } from './data';
-import { Btn, FilePair, HeaderGlyph, IconBtn, Thumb } from './components';
+import { Btn, FilePair, HeaderGlyph, IconBtn } from './components';
+import { BlueprintImage } from './blueprintImage';
 import { IcCheck, IcClose, IcCopy, IcFolder, IcInfo, IcWarn } from './icons';
 import type { Outcome } from './platform';
 
@@ -94,7 +95,7 @@ export function CopyDrawer({ open, items, sessions, defaultTarget, onClose, onRe
                 <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px',
                   borderRadius: 'var(--r)', background: 'var(--panel-2)', border: '1px solid var(--border)', opacity: skip && phase === 'idle' ? .55 : 1 }}>
                   <div style={{ width: 48, height: 34, borderRadius: 5, overflow: 'hidden', flexShrink: 0,
-                    border: '1px solid var(--border)' }}><Thumb hue={b.hue} seed={b.seed} label="" /></div>
+                    border: '1px solid var(--border)' }}><BlueprintImage bp={b} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
                     <div className="mono" style={{ marginTop: 4, fontSize: 10, color: 'var(--text-mute)' }}>

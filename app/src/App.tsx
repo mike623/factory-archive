@@ -33,8 +33,14 @@ const DISK_DEMO: Blueprint[] = [
   ['Preview World', 'Coal Gen Block', 9120, false],
   ['Preview World', 'Main Bus Splitter', 15400, true],
   ['Old World', 'Starter Smelters', 6100, true],
-].map(([session, name, size, cfg], i) => toBlueprint(session as string,
-  { name: name as string, hasSbp: true, hasCfg: cfg as boolean, size: size as number, modified: 1791000000 - i * 86400 }));
+].map(([session, name, size, cfg], i) => toBlueprint(session as string, {
+  name: name as string, hasSbp: true, hasCfg: cfg as boolean, size: size as number, modified: 1791000000 - i * 86400,
+  // the first one previews an import from a web page: details + picture
+  meta: i === 0 ? { source: 'scim', sourceUrl: 'https://satisfactory-calculator.com/en/blueprints/index/details/id/10327/name/SFS+Foundry+x3',
+    title: 'SFS Foundry x3 — compact steel', description: 'Three foundries fed by a single manifold. Preview data for the browser.',
+    author: 'Preview Pioneer', category: 'Production', tags: ['Steel', 'Foundry', 'Compact'] } : null,
+})).map((b, i) => i === 0 ? { ...b, imageUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="#2b4a6b"/><stop offset="1" stop-color="#c97417"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/><text x="24" y="336" font-family="monospace" font-size="18" fill="#fff" opacity=".8">PREVIEW PICTURE</text></svg>') } : b);
 
 const NAV_TITLES: Record<NavId, string> = {
   library: 'Library', import: 'Import Queue', recent: 'Recent', favorites: 'Favorites',
@@ -104,6 +110,11 @@ export default function App() {
   const disk = useDiskLibrary(gameFolder.current?.path ?? null, share.imports.length);
   const items = disk.items ?? library;
   const metadata = items.some(b => !b.onDisk);
+  // for files on disk, category / tags / sources come from imported pages' details
+  const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const categoryOptions = useMemo(() => metadata ? undefined : uniq(items.map(b => b.category)), [items, metadata]);
+  const tagChoices = useMemo(() => metadata ? undefined : uniq(items.flatMap(b => b.tags)).slice(0, 40), [items, metadata]);
+  const showSources = metadata || items.some(b => b.source !== 'local');
 
   // World session filter: follows the current save until the user picks something else
   const currentSession = share.sessions?.pinned ?? share.sessions?.detected?.name ?? null;
@@ -221,7 +232,7 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={metadata} updater={updater} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={showSources} updater={updater} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -236,6 +247,7 @@ export default function App() {
             <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
               {!showEmpty && filterOpen && <FilterRail filters={filters} setFilters={setFilters}
                 counts={{ shown: filtered.length, total: scoped.length }} onReset={resetFilters} metadata={metadata}
+                categories={categoryOptions} tagOptions={tagChoices}
                 session={{ options: sessionOptions, current: currentSession, value: sessionFilter, onChange: setSessionChoice }} />}
               <div className="grid-bg" style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: 'var(--bg)' }}>
                 {showEmpty

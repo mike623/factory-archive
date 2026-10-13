@@ -1,8 +1,10 @@
 mod blueprints;
+mod meta;
 mod resolve;
 mod share;
 
 use serde::Serialize;
+use meta::{BlueprintMeta, MetaStore};
 use share::{ShareInfo, ShareState};
 use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
@@ -100,7 +102,8 @@ fn open_folder(app: tauri::AppHandle, root: String, session: Option<String>) -> 
 /// Start sharing `root` (a game's `blueprints` folder) with players on the local network.
 #[tauri::command]
 fn share_start(app: tauri::AppHandle, state: tauri::State<'_, ShareState>, root: String) -> Result<ShareInfo, String> {
-    state.start(PathBuf::from(root), move |ev| {
+    state.start(PathBuf::from(root), move |ev, bp| {
+        let _ = app.state::<MetaStore>().save_resolved(bp);
         let _ = app.emit("share-imported", ev);
     })
 }
@@ -123,21 +126,64 @@ fn sessions(state: tauri::State<'_, ShareState>, root: String) -> serde_json::Va
 
 /// Every blueprint on disk, grouped by world session (newest session first).
 #[tauri::command]
-fn library(root: String) -> Vec<blueprints::Session> {
-    blueprints::list_sessions(&PathBuf::from(root))
+fn library(store: tauri::State<'_, MetaStore>, root: String) -> Vec<LibSession> {
+    let root = PathBuf::from(root);
+    blueprints::list_sessions(&root).into_iter().map(|s| LibSession {
+        blueprints: s.blueprints.into_iter().map(|f| {
+            let key = f.has_sbp.then(|| store.key_for_file(&root.join(&s.name).join(format!("{}.sbp", f.name)))).flatten();
+            let meta = key.as_deref().and_then(|k| store.load(k));
+            LibFile { file: f, key, meta }
+        }).collect(),
+        name: s.name,
+    }).collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibFile {
+    #[serde(flatten)]
+    file: blueprints::BlueprintFile,
+    /// content fingerprint, used to look up details and the picture
+    key: Option<String>,
+    meta: Option<BlueprintMeta>,
+}
+
+#[derive(Serialize)]
+struct LibSession {
+    name: String,
+    blueprints: Vec<LibFile>,
+}
+
+/// A blueprint's saved picture as a data: URL.
+#[tauri::command]
+fn blueprint_image(store: tauri::State<'_, MetaStore>, key: String) -> Option<String> {
+    store.image_data_url(&key)
+}
+
+/// Remember that successfully added files came from this machine (keeps richer details if present).
+fn note_local(store: &MetaStore, root: &Path, session: &str, out: &[blueprints::Outcome]) {
+    for o in out.iter().filter(|o| o.ok) {
+        if let Ok(b) = blueprints::read_file(root, session, &o.name, "sbp") { store.note_local(&b); }
+    }
 }
 
 /// Add .sbp/.sbpcfg files picked from anywhere on disk to a world session.
 #[tauri::command]
-fn import_files(root: String, session: String, paths: Vec<String>) -> Vec<blueprints::Outcome> {
+fn import_files(store: tauri::State<'_, MetaStore>, root: String, session: String, paths: Vec<String>) -> Vec<blueprints::Outcome> {
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    blueprints::import_paths(&PathBuf::from(root), &session, &paths)
+    let root = PathBuf::from(root);
+    let out = blueprints::import_paths(&root, &session, &paths);
+    note_local(&store, &root, &session, &out);
+    out
 }
 
 /// Add .sbp/.sbpcfg files dropped onto the window (sent as bytes) to a world session.
 #[tauri::command]
-fn import_bytes(root: String, session: String, files: Vec<(String, Vec<u8>)>) -> Vec<blueprints::Outcome> {
-    blueprints::import_named(&PathBuf::from(root), &session, files)
+fn import_bytes(store: tauri::State<'_, MetaStore>, root: String, session: String, files: Vec<(String, Vec<u8>)>) -> Vec<blueprints::Outcome> {
+    let root = PathBuf::from(root);
+    let out = blueprints::import_named(&root, &session, files);
+    note_local(&store, &root, &session, &out);
+    out
 }
 
 /// Copy blueprints (`(session, name)` pairs) into another world session.
@@ -158,11 +204,13 @@ struct LinkImport {
 
 /// Download a blueprint from a SCIM / Satisfactory Blueprints / direct link and add it to a world.
 #[tauri::command]
-async fn import_link(root: String, session: String, url: String) -> Result<LinkImport, String> {
+async fn import_link(app: tauri::AppHandle, root: String, session: String, url: String) -> Result<LinkImport, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let bp = resolve::resolve(&url)?;
         blueprints::write_blueprint(&PathBuf::from(&root), &session, &bp.name, &bp.sbp, bp.cfg.as_deref(), true)
             .map_err(|e| e.to_string())?;
+        // details + picture are a bonus: a failure here doesn't undo the import
+        if let Err(e) = app.state::<MetaStore>().save_resolved(&bp) { eprintln!("couldn't save blueprint details: {e}"); }
         Ok(LinkImport { size_kb: (bp.sbp.len() as u64).div_ceil(1024), has_cfg: bp.cfg.is_some(), name: bp.name, session })
     })
     .await
@@ -188,7 +236,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
+        .setup(|app| {
+            let dir = app.path().app_data_dir()?.join("blueprint-meta");
+            app.manage(MetaStore::new(dir));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

@@ -87,6 +87,20 @@ Paste a link in **Import**, or friends paste one on the share page. The app down
 
 Tested offline against a local stand-in site (`cargo test`), and confirmed working on a real SCIM page (`…/details/id/10327/name/SFS+Foundry+x3`). SCIM sends URL-encoded file names, which are decoded. Satisfactory Blueprints links haven't been tried yet.
 
+## Blueprint details and pictures
+
+When you import from a link, the app also saves the page's details: picture, title, description, author, category, tags, and the source site and link. The Library then shows the real picture, author, tags and source. **Open link** and **Copy link** on the detail page lead back to the page, and the category, tag and source filters use these details.
+
+- **Where:** the app's data folder, not the game folder, so Satisfactory never sees extra files:
+  - Windows: `%APPDATA%\com.factoryarchive.app\blueprint-meta\`
+  - macOS: `~/Library/Application Support/com.factoryarchive.app/blueprint-meta/`
+
+  Each blueprint gets `<fingerprint>.json` and, if the page has a picture, `<fingerprint>.jpg`/`.png`.
+- **Keyed by content:** the fingerprint is a hash of the `.sbp` contents, so the details follow a blueprint when you copy it to another world or rename the file.
+- **How it's read:** from the standard link-preview tags pages include (Open Graph, Twitter cards, `<meta name=…>`), with no site-specific parsing. Title, picture and description are almost always there. Author, category and tags appear only when the site publishes them in those tags.
+- Pictures are kept only if the bytes really are PNG, JPEG, WebP or GIF, up to 10 MB.
+- Files added from disk are marked **Local**. Blueprints imported before this feature have no details; delete them and import the link again to get them.
+
 ## Open the blueprint folder
 
 The folder button in the sidebar footer opens the current world's blueprint folder in Explorer or Finder. That's the session that imports go to, or the blueprints root if that session has no folder yet. After a batch export, **Open** in the export drawer does the same.

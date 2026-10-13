@@ -7,6 +7,7 @@ import {
   IcLayers, IcLink, IcMachine, IcMaterial, IcPower, IcRefresh, IcStar, IcTag, IcUpload, IcUser, IcWarn, type Icon,
 } from './icons';
 import { copyText, openExternal } from './platform';
+import { BlueprintImage, useBlueprintImage } from './blueprintImage';
 
 const overlayChip = {
   fontSize: 10, padding: '4px 9px', borderRadius: 5, background: 'rgba(8,9,11,.7)',
@@ -29,12 +30,14 @@ function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder }: 
         fontSize: 12.5, fontWeight: 500, fontFamily: 'var(--font-display)' }}>
         <IcArrowLeft size={16} />Library</button>
       <div className="mono" style={{ fontSize: 11, color: 'var(--text-mute)', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-        <span>{bp.category}</span><IcChevron size={12} /><span style={{ color: 'var(--text-dim)' }}>{bp.onDisk ? `${bp.name}.sbp` : bp.id.toUpperCase()}</span>
+        <span>{bp.onDisk ? bp.session : bp.category}</span><IcChevron size={12} /><span style={{ color: 'var(--text-dim)' }}>{bp.onDisk ? `${bp.name}.sbp` : bp.id.toUpperCase()}</span>
       </div>
       <div style={{ flex: 1 }} />
       <IconBtn icon={IcStar} active={fav} title={fav ? 'Remove from favorites' : 'Add to favorites'} onClick={onToggleFav} />
       <Btn variant="ghost" icon={copied ? IcCheck : IcCopy} onClick={copy} disabled={!bp.url}
         title={bp.url ? 'Copy source link' : 'No source link for local imports'}>{copied ? 'Copied' : 'Copy link'}</Btn>
+      <Btn variant="ghost" icon={IcExternal} onClick={() => bp.url && openExternal(bp.url)} disabled={!bp.url}
+        title={bp.url ? `Open ${bp.url}` : 'No source link for local imports'}>Open link</Btn>
       {bp.onDisk
         ? <Btn variant="primary" icon={IcFolder} onClick={onOpenFolder}>Open folder</Btn>
         : <Btn variant="primary" icon={IcDownload} onClick={onExport}>Export to game folder</Btn>}
@@ -48,6 +51,8 @@ function HeroShot({ bp, active, shots, image, onDropImage }: {
 }) {
   const [over, setOver] = useState(false);
   const label = `CAMERA ${String(active + 1).padStart(2, '0')}`;
+  const picture = useBlueprintImage(bp);
+  const shown = image ?? (active === 0 ? picture : null);
   const onDrop = (e: DragEvent) => {
     e.preventDefault(); setOver(false);
     const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
@@ -58,8 +63,8 @@ function HeroShot({ bp, active, shots, image, onDropImage }: {
       style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: `1px solid ${over ? 'var(--accent)' : 'var(--border)'}`,
       background: 'var(--panel)', position: 'relative', transition: 'border-color .15s' }}>
       <div style={{ position: 'relative', width: '100%', height: 380 }}>
-        {image
-          ? <img src={image} alt={`${bp.name} — ${label}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {shown
+          ? <img src={shown} alt={`${bp.name} — ${label}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <Thumb hue={bp.hue} seed={bp.seed + active} label={label} />}
         {over && <div style={{ position: 'absolute', inset: 0, background: 'var(--accent-ghost)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', gap: 8 }}>
@@ -106,6 +111,7 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
               </div>
               <h1 style={{ margin: 0, fontSize: 27, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.1,
                 textWrap: 'balance' }}>{bp.name}</h1>
+              {bp.title && <div style={{ marginTop: 6, fontSize: 14, color: 'var(--text-dim)' }}>{bp.title}</div>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10, color: 'var(--text-dim)', flexWrap: 'wrap' }}>
                 {bp.author && <MetaInline icon={IcUser}>{bp.author}</MetaInline>}
                 {bp.session && <MetaInline icon={IcFolder}>{bp.session}</MetaInline>}
@@ -127,7 +133,7 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
                   transition: 'all .14s' }}>
                   {images[i]
                     ? <img src={images[i]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    : <Thumb hue={bp.hue} seed={bp.seed + i} label="" />}
+                    : i === 0 ? <BlueprintImage bp={bp} /> : <Thumb hue={bp.hue} seed={bp.seed + i} label="" />}
                   <span className="mono" style={{ position: 'absolute', bottom: 3, left: 5, fontSize: 8,
                     color: 'rgba(255,255,255,.5)' }}>{String(i + 1).padStart(2, '0')}</span>
                 </button>

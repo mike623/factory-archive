@@ -40,11 +40,143 @@ pub fn detect_source(url: &str) -> Option<Source> {
     Some(Source::Direct)
 }
 
+/// Details read from the blueprint's web page (standard link-preview tags only).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct PageMeta {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub site_name: Option<String>,
+    pub author: Option<String>,
+    pub category: Option<String>,
+    pub tags: Vec<String>,
+}
+
 #[derive(Debug)]
 pub struct Resolved {
     pub name: String,
     pub sbp: Vec<u8>,
     pub cfg: Option<Vec<u8>>,
+    pub source: Source,
+    pub url: String,
+    pub meta: PageMeta,
+    /// preview image from the page: bytes + file extension
+    pub image: Option<(Vec<u8>, &'static str)>,
+}
+
+impl Source {
+    pub fn id(self) -> &'static str {
+        match self { Source::Scim => "scim", Source::Sbp => "sbp", Source::Direct => "url" }
+    }
+}
+
+fn decode_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let Some(end) = tail.find(';').filter(|&e| e <= 10) else { out.push('&'); rest = &tail[1..]; continue };
+        let ent = &tail[1..end];
+        let ch = match ent {
+            "amp" => Some('&'), "lt" => Some('<'), "gt" => Some('>'), "quot" => Some('"'), "apos" | "#39" => Some('\''),
+            "nbsp" => Some(' '),
+            e if e.starts_with("#x") || e.starts_with("#X") => u32::from_str_radix(&e[2..], 16).ok().and_then(char::from_u32),
+            e if e.starts_with('#') => e[1..].parse().ok().and_then(char::from_u32),
+            _ => None,
+        };
+        match ch { Some(c) => { out.push(c); rest = &tail[end + 1..]; } None => { out.push('&'); rest = &tail[1..]; } }
+    }
+    out.push_str(rest);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// attribute value from a single tag's source, e.g. `content` in `<meta property="og:title" content="X">`
+fn attr(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(p) = lower[from..].find(name) {
+        let at = from + p;
+        from = at + name.len();
+        let before_ok = at == 0 || lower.as_bytes()[at - 1].is_ascii_whitespace();
+        let after = lower[from..].trim_start();
+        if !before_ok || !after.starts_with('=') { continue; }
+        let v = tag[tag.len() - after.len() + 1..].trim_start();
+        let (q, body) = match v.chars().next() { Some(c @ ('"' | '\'')) => (Some(c), &v[1..]), _ => (None, v) };
+        let end = match q { Some(c) => body.find(c), None => body.find(|c: char| c.is_whitespace() || c == '>' || c == '/') }.unwrap_or(body.len());
+        return Some(decode_entities(&body[..end]));
+    }
+    None
+}
+
+fn tags_named<'a>(html: &'a str, tag: &str) -> Vec<&'a str> {
+    let lower = html.to_ascii_lowercase();
+    let open = format!("<{tag}");
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(p) = lower[i..].find(&open) {
+        let s = i + p;
+        let Some(e) = lower[s..].find('>') else { break };
+        out.push(&html[s..s + e + 1]);
+        i = s + e + 1;
+    }
+    out
+}
+
+/// Read title / picture / description / author / category / tags from standard
+/// Open Graph, Twitter-card and `<meta name=…>` tags. No site-specific selectors.
+pub fn page_meta(html: &str, base: &Url) -> PageMeta {
+    let mut m = PageMeta::default();
+    let mut keywords: Option<String> = None;
+    let nonempty = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+    for t in tags_named(html, "meta") {
+        let key = attr(t, "property").or_else(|| attr(t, "name")).or_else(|| attr(t, "itemprop")).map(|k| k.to_ascii_lowercase());
+        let Some(key) = key else { continue };
+        let Some(val) = nonempty(attr(t, "content")) else { continue };
+        match key.as_str() {
+            "og:title" => { m.title.get_or_insert(val); }
+            "twitter:title" if m.title.is_none() => m.title = Some(val),
+            "og:description" => { m.description.get_or_insert(val); }
+            "twitter:description" | "description" if m.description.is_none() => m.description = Some(val),
+            "og:image" | "og:image:secure_url" | "og:image:url" => { m.image_url.get_or_insert(val); }
+            "twitter:image" | "twitter:image:src" | "image" if m.image_url.is_none() => m.image_url = Some(val),
+            "og:site_name" => { m.site_name.get_or_insert(val); }
+            "author" | "article:author" => { m.author.get_or_insert(val); }
+            "article:section" => { m.category.get_or_insert(val); }
+            "article:tag" => if !m.tags.contains(&val) { m.tags.push(val) },
+            "keywords" => { keywords.get_or_insert(val); }
+            _ => {}
+        }
+    }
+    if m.tags.is_empty() {
+        if let Some(k) = keywords {
+            for t in k.split(',').map(str::trim).filter(|t| !t.is_empty()).take(12) {
+                if !m.tags.iter().any(|x| x.eq_ignore_ascii_case(t)) { m.tags.push(t.to_string()); }
+            }
+        }
+    }
+    if m.title.is_none() {
+        let lower = html.to_ascii_lowercase();
+        if let (Some(a), Some(b)) = (lower.find("<title"), lower.find("</title>")) {
+            if let Some(gt) = lower[a..].find('>') { if a + gt + 1 <= b { m.title = nonempty(Some(decode_entities(&html[a + gt + 1..b]))); } }
+        }
+    }
+    if m.image_url.is_none() {
+        m.image_url = tags_named(html, "link").into_iter()
+            .find(|t| attr(t, "rel").map(|r| r.eq_ignore_ascii_case("image_src")).unwrap_or(false))
+            .and_then(|t| attr(t, "href"));
+    }
+    m.image_url = m.image_url.and_then(|u| base.join(&u).ok()).filter(|u| matches!(u.scheme(), "http" | "https")).map(|u| u.to_string());
+    m
+}
+
+/// Image type from its first bytes; anything else (HTML error pages, SVG scripts…) is rejected.
+fn image_ext(b: &[u8]) -> Option<&'static str> {
+    if b.starts_with(b"\x89PNG\r\n\x1a\n") { Some("png") }
+    else if b.starts_with(&[0xFF, 0xD8, 0xFF]) { Some("jpg") }
+    else if b.len() > 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" { Some("webp") }
+    else if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") { Some("gif") }
+    else { None }
 }
 
 const MAX_BYTES: u64 = 25 * 1024 * 1024;
@@ -229,6 +361,7 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
 
     let mut sbp: Option<(String, Vec<u8>)> = None;
     let mut cfg: Option<Vec<u8>> = None;
+    let mut meta = PageMeta::default();
 
     if !first.is_html {
         // a direct file link
@@ -253,6 +386,7 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
     } else {
         // a web page: try the links that look like downloads
         let html = String::from_utf8_lossy(&first.bytes).into_owned();
+        meta = page_meta(&html, &page);
         let mut last_err: Option<String> = None;
         for u in candidates(extract_links(&html, &page), &page) {
             match fetch(&c, &u, allow_private) {
@@ -281,7 +415,15 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
     if sbp_bytes.is_empty() { return Err("The downloaded .sbp file is empty.".into()); }
     let mut name = clean_name(stem(&file));
     if name.is_empty() { name = "Imported blueprint".into(); }
-    Ok(Resolved { name, sbp: sbp_bytes, cfg })
+
+    // the page's preview picture, if it is really an image (optional: failures are ignored)
+    let image = meta.image_url.as_deref()
+        .and_then(|u| Url::parse(u).ok())
+        .and_then(|u| fetch(&c, &u, allow_private).ok())
+        .filter(|f| f.bytes.len() <= 10 * 1024 * 1024)
+        .and_then(|f| image_ext(&f.bytes).map(|ext| (f.bytes, ext)));
+
+    Ok(Resolved { name, sbp: sbp_bytes, cfg, source: src, url: page.to_string(), meta, image })
 }
 
 #[cfg(test)]
@@ -318,6 +460,26 @@ mod tests {
     }
 
     #[test]
+    fn reads_link_preview_tags() {
+        let base = Url::parse("https://example.com/bp/1").unwrap();
+        let m = page_meta(r#"<html><head><title>Fallback</title>
+            <meta property="og:title" content="SFS Foundry x3 &amp; more">
+            <meta name="description" content="Three   foundries">
+            <meta property='og:image' content='/img/1.jpg'>
+            <meta name="author" content="Ficsit Fan"><meta property="article:section" content="Production">
+            <meta name="keywords" content="Steel, Foundry,steel, Modular"></head></html>"#, &base);
+        assert_eq!(m.title.as_deref(), Some("SFS Foundry x3 & more"));
+        assert_eq!(m.description.as_deref(), Some("Three foundries"));
+        assert_eq!(m.image_url.as_deref(), Some("https://example.com/img/1.jpg"));
+        assert_eq!(m.author.as_deref(), Some("Ficsit Fan"));
+        assert_eq!(m.category.as_deref(), Some("Production"));
+        assert_eq!(m.tags, ["Steel", "Foundry", "Modular"]);
+        assert_eq!(page_meta("<title>Only &#8211; title</title>", &base).title.as_deref(), Some("Only – title"));
+        assert_eq!(image_ext(b"<html>"), None);
+        assert_eq!(image_ext(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+    }
+
+    #[test]
     fn blocks_local_addresses_for_real_use() {
         assert!(resolve("http://127.0.0.1:1/x.sbp").unwrap_err().contains("local"));
         assert!(resolve("http://192.168.1.10/x.sbp").unwrap_err().contains("local"));
@@ -338,11 +500,13 @@ mod tests {
                     .with_header(Header::from_bytes("Content-Type", "application/octet-stream").unwrap())
                     .with_header(Header::from_bytes("Content-Disposition", format!("attachment; filename=\"{name}\"")).unwrap());
                 let resp = match req.url() {
-                    "/details/1" => html(r#"<html><a href="/login">Log in</a> <link href="/a.css">
+                    "/details/1" => html(r#"<html><meta property="og:title" content="SFS Foundry x3"><meta property="og:image" content="/img/1.png">
+                        <meta name="keywords" content="Foundry, Steel"><a href="/login">Log in</a> <link href="/a.css">
                         <a href="/download/1/sbp">Download SBP</a> <a href="/download/1/cfg">Download SBP config</a></html>"#),
                     "/download/1/sbp" => file(b"SBP-BYTES", "SFS%20Foundry%20x3.sbp"),
                     "/download/1/cfg" => file(b"CFG-BYTES", "SFS Foundry x3.sbpcfg"),
                     "/details/2" => html("<html>Please log in to download.</html>"),
+                    "/img/1.png" => HttpResponse::from_data(b"\x89PNG\r\n\x1a\nfake".to_vec()),
                     "/files/Bus.sbp" => file(b"BUS", "Bus.sbp"),
                     "/files/Bus.sbpcfg" => file(b"BUSCFG", "Bus.sbpcfg"),
                     "/files/page.sbp" => html("<html>not a file</html>"),
@@ -361,6 +525,10 @@ mod tests {
         assert_eq!(r.name, "SFS Foundry x3");
         assert_eq!(r.sbp, b"SBP-BYTES");
         assert_eq!(r.cfg.as_deref(), Some(&b"CFG-BYTES"[..]));
+        assert_eq!(r.source, Source::Direct);
+        assert_eq!(r.meta.title.as_deref(), Some("SFS Foundry x3"));
+        assert_eq!(r.meta.tags, ["Foundry", "Steel"]);
+        assert_eq!(r.image.as_ref().map(|(b, e)| (b.len(), *e)), Some((12, "png")));
 
         let r = resolve_with(&format!("{base}/files/Bus.sbp"), true).unwrap();
         assert_eq!((r.name.as_str(), r.cfg.as_deref()), ("Bus", Some(&b"BUSCFG"[..])));

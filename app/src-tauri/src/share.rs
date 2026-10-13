@@ -60,7 +60,7 @@ pub fn target_session(root: &std::path::Path, pinned: &Mutex<Option<String>>) ->
 
 impl ShareState {
     /// `on_import` runs on the server thread after a friend's blueprint is written.
-    pub fn start(&self, root: PathBuf, on_import: impl Fn(ImportedEvent) + Send + 'static) -> Result<ShareInfo, String> {
+    pub fn start(&self, root: PathBuf, on_import: impl Fn(ImportedEvent, &resolve::Resolved) + Send + 'static) -> Result<ShareInfo, String> {
         let mut guard = self.running.lock().map_err(|e| e.to_string())?;
         if let Some(r) = guard.as_ref() {
             if r.info.root == root.to_string_lossy() { return Ok(r.info.clone()); }
@@ -198,7 +198,7 @@ struct ImportBody {
     url: String,
 }
 
-fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_import: &dyn Fn(ImportedEvent)) {
+fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_import: &dyn Fn(ImportedEvent, &resolve::Resolved)) {
     if !host_allowed(&req) { return error(req, 403, "forbidden host"); }
     let path = req.url().split('?').next().unwrap_or("").to_string();
     let method = req.method().clone();
@@ -243,7 +243,7 @@ fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_i
                 Err(msg) => error(req, 422, &msg),
                 Ok(bp) => match blueprints::write_blueprint(root, &target.name, &bp.name, &bp.sbp, bp.cfg.as_deref(), true) {
                     Ok(()) => {
-                        on_import(ImportedEvent { name: bp.name.clone(), session: target.name.clone() });
+                        on_import(ImportedEvent { name: bp.name.clone(), session: target.name.clone() }, &bp);
                         json(req, 200, &serde_json::json!({ "ok": true, "name": bp.name, "session": target.name }))
                     }
                     Err(BpError::Exists) => error(req, 409, &BpError::Exists.to_string()),
@@ -288,7 +288,7 @@ mod tests {
         std::fs::write(root.join("secret.txt"), b"nope").unwrap();
 
         let state = ShareState::default();
-        let info = state.start(root.clone(), |_| {}).unwrap();
+        let info = state.start(root.clone(), |_, _| {}).unwrap();
         let port = info.port;
         let host = format!("127.0.0.1:{port}");
         assert!(info.urls.iter().any(|u| u.ends_with(&format!(":{port}"))));

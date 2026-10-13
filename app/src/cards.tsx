@@ -1,7 +1,8 @@
 // cards.tsx — top bar, blueprint card/row, library body
 import { useState, type Ref } from 'react';
 import { dimsLabel, type Blueprint } from './data';
-import { Btn, Check, FilePair, IconBtn, MiniTag, ModdedBadge, SourceBadge, StatusPill, Thumb } from './components';
+import { Btn, Check, FilePair, IconBtn, MiniTag, ModdedBadge, SourceBadge, StatusPill } from './components';
+import { BlueprintImage } from './blueprintImage';
 import { IcChevron, IcClose, IcFilter, IcFolder, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
 
 export type SortKey = 'recent' | 'name' | 'downloads' | 'power';
@@ -87,7 +88,7 @@ export function BlueprintCard({ bp, selected, onSelect, onOpen }: ItemProps) {
       transform: hover ? 'translateY(-2px)' : 'none', transition: 'all .18s var(--ease)' }}>
       {/* thumb */}
       <div style={{ position: 'relative', height: 158, borderBottom: '1px solid var(--border-soft)' }}>
-        <Thumb hue={bp.hue} seed={bp.seed} label={dimsLabel(bp) ? `${dimsLabel(bp)} · ${bp.shots} SHOTS` : `${bp.sizeKB} KB · .SBP`} />
+        <BlueprintImage bp={bp} label={dimsLabel(bp) ? `${dimsLabel(bp)} · ${bp.shots} SHOTS` : `${bp.sizeKB} KB · .SBP`} />
         <div style={{ position: 'absolute', top: 9, left: 9, right: 9, display: 'flex', justifyContent: 'space-between',
           alignItems: 'flex-start', pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto', opacity: hover || selected ? 1 : 0, transition: 'opacity .15s' }}>
@@ -148,7 +149,7 @@ export function BlueprintRow({ bp, selected, onSelect, onOpen }: ItemProps) {
         <div style={{ opacity: hover || selected ? 1 : .25, transition: 'opacity .15s' }}>
           <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} /></div>
         <div style={{ width: 64, height: 42, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
-          border: '1px solid var(--border)' }}><Thumb hue={bp.hue} seed={bp.seed} label="" /></div>
+          border: '1px solid var(--border)' }}><BlueprintImage bp={bp} /></div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden',
             textOverflow: 'ellipsis' }}>{bp.name}</div>
