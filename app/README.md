@@ -17,6 +17,26 @@ On macOS the app scans every CrossOver bottle and lists each one that has Satisf
 
 Satisfactory keeps blueprints in one subfolder per save session, under the folder above.
 
+## Share with players (multiplayer)
+
+Blueprints live with the host's world, so the host's app can serve a small web page that friends on the **same network** open in any browser. There's no PIN, by design.
+
+1. The host turns on **Share on LAN** in the sidebar and copies the link, e.g. `http://192.168.1.20:7777`.
+2. The first time, Windows Defender Firewall or macOS asks whether to allow incoming connections. Allow it on **private** networks.
+3. Friends open the link. They can:
+   - **Browse and download** the host's blueprints, grouped by world session.
+   - **Paste a SCIM or Satisfactory Blueprints link**, which is written straight into the host's world folder. *Not working yet:* the link import isn't built (see below), so the page shows a clear "not available yet" message and writes nothing.
+4. The host gets a notification, then loads the session again to see the new blueprint.
+
+**Which world imports go into.** The app picks it automatically:
+- First, the world of the newest autosave. Satisfactory names autosaves `<session>_autosave_<n>.sav`, so the session name comes from the file name. That naming is from memory and hasn't been checked against the game.
+- Otherwise, the most recently changed blueprint session folder.
+- The host can override this with **Imports go to** in the Share panel.
+
+If the world has no blueprint folder yet, it's created on the first import.
+
+The server only runs while sharing is on, and only serves `.sbp`/`.sbpcfg` files from the blueprints folder. It rejects path tricks, requests addressed to a foreign host name (DNS rebinding) and cross-site form posts. Anyone on the same network can still use the page, so only turn sharing on at home or on a trusted VPN such as Tailscale or ZeroTier.
+
 ## Get a build
 
 Every push that touches `app/` runs the **Desktop build** GitHub Action (`.github/workflows/desktop-build.yml`). It builds:
@@ -70,8 +90,9 @@ Changes from the prototype: the fake macOS window frame, the scale-to-fit stage,
 ## Still mocked
 
 - **Library data** is the sample set in `src/data.ts`. It lives in memory and resets on restart.
-- **Import resolve** returns a fixed preview (`mockResolve` in `src/modals.tsx`).
+- **Link import** isn't built yet. In the app, Import returns a fixed preview (`mockResolve` in `src/modals.tsx`). On the share page, `resolve` in `src-tauri/src/resolve.rs` reports "not available yet" so no fake files are ever written. Neither site documents its download links, so this needs the real pages examined first.
 - **Export** simulates copy progress. It doesn't write any files yet.
+- **Real and tested (`cargo test`):** the share server (`share.rs`), reading, writing and detecting world sessions (`blueprints.rs`), and source detection (`resolve.rs`).
 - **Game folder detection is real.** The Rust command `game_folders` in `src-tauri/src/lib.rs` returns the Windows folder or the CrossOver bottles, and its unit tests run with `cargo test`.
 
 Next steps: persist the library (Tauri store or SQLite), fetch and parse blueprint URLs in Rust, and copy the `.sbp`/`.sbpcfg` pair into the chosen session folder.

@@ -1,0 +1,262 @@
+//! Reading and writing blueprint files inside a game's `blueprints` folder.
+//!
+//! Layout: `<root>/<session name>/<blueprint name>.sbp` (+ optional `.sbpcfg`).
+//! Every name that arrives from outside (the share page) goes through
+//! [`valid_component`] so it can never escape `<root>`.
+
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueprintFile {
+    pub name: String,
+    pub has_sbp: bool,
+    pub has_cfg: bool,
+    /// size of the .sbp in bytes
+    pub size: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub name: String,
+    pub blueprints: Vec<BlueprintFile>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum BpError {
+    BadName,
+    NotFound,
+    Exists,
+    Io(String),
+}
+
+impl std::fmt::Display for BpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BpError::BadName => write!(f, "invalid session or blueprint name"),
+            BpError::NotFound => write!(f, "not found"),
+            BpError::Exists => write!(f, "a blueprint with that name already exists in this session"),
+            BpError::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+fn io(e: std::io::Error) -> BpError {
+    if e.kind() == ErrorKind::NotFound { BpError::NotFound } else { BpError::Io(e.to_string()) }
+}
+
+/// A single file or folder name that is safe on Windows and macOS and cannot traverse.
+pub fn valid_component(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s != "."
+        && s != ".."
+        && !s.starts_with(' ')
+        && !s.ends_with(' ')
+        && !s.ends_with('.')
+        && !s.chars().any(|c| c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+}
+
+pub fn is_blueprint_ext(ext: &str) -> bool {
+    ext == "sbp" || ext == "sbpcfg"
+}
+
+fn modified(p: &Path) -> SystemTime {
+    fs::metadata(p).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// All session folders under `root`, most recently changed first, each with its blueprints.
+pub fn list_sessions(root: &Path) -> Vec<Session> {
+    let Ok(entries) = fs::read_dir(root) else { return Vec::new() };
+    let mut dirs: Vec<(SystemTime, Session)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() { continue; }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let mut by_name: BTreeMap<String, BlueprintFile> = BTreeMap::new();
+        let mut newest = modified(&path);
+        if let Ok(files) = fs::read_dir(&path) {
+            for f in files.flatten() {
+                let fp = f.path();
+                let (Some(stem), Some(ext)) = (fp.file_stem(), fp.extension()) else { continue };
+                let ext = ext.to_string_lossy().to_ascii_lowercase();
+                if !is_blueprint_ext(&ext) { continue; }
+                newest = newest.max(modified(&fp));
+                let stem = stem.to_string_lossy().into_owned();
+                let e = by_name.entry(stem.clone()).or_insert(BlueprintFile {
+                    name: stem, has_sbp: false, has_cfg: false, size: 0,
+                });
+                if ext == "sbp" {
+                    e.has_sbp = true;
+                    e.size = f.metadata().map(|m| m.len()).unwrap_or(0);
+                } else {
+                    e.has_cfg = true;
+                }
+            }
+        }
+        dirs.push((newest, Session { name, blueprints: by_name.into_values().collect() }));
+    }
+    dirs.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+    dirs.into_iter().map(|(_, s)| s).collect()
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentSession {
+    pub name: String,
+    /// "autosave" (from the newest `<session>_autosave_<n>.sav`) or "blueprints" (newest session folder)
+    pub source: &'static str,
+}
+
+/// `<session>_autosave_<n>` → `<session>`
+fn session_from_autosave(stem: &str) -> Option<&str> {
+    let (session, n) = stem.rsplit_once("_autosave_")?;
+    (!session.is_empty() && !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())).then_some(session)
+}
+
+/// Best guess at the world the host is playing. `root` is the `blueprints` folder; saves live in
+/// sibling per-account folders: `SaveGames/<account id>/*.sav`.
+pub fn detect_current(root: &Path) -> Option<CurrentSession> {
+    let mut newest: Option<(SystemTime, String)> = None;
+    if let Some(save_games) = root.parent() {
+        for account in fs::read_dir(save_games).into_iter().flatten().flatten() {
+            let dir = account.path();
+            if !dir.is_dir() || dir == root { continue; }
+            for f in fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let fp = f.path();
+                if fp.extension().map(|e| e.eq_ignore_ascii_case("sav")) != Some(true) { continue; }
+                let Some(stem) = fp.file_stem().map(|s| s.to_string_lossy().into_owned()) else { continue };
+                let Some(session) = session_from_autosave(&stem) else { continue };
+                let t = modified(&fp);
+                if newest.as_ref().map_or(true, |(nt, _)| t > *nt) { newest = Some((t, session.to_string())); }
+            }
+        }
+    }
+    if let Some((_, name)) = newest.filter(|(_, n)| valid_component(n)) {
+        return Some(CurrentSession { name, source: "autosave" });
+    }
+    list_sessions(root).into_iter().next().map(|s| CurrentSession { name: s.name, source: "blueprints" })
+}
+
+fn file_path(root: &Path, session: &str, name: &str, ext: &str) -> Result<PathBuf, BpError> {
+    if !valid_component(session) || !valid_component(name) || !is_blueprint_ext(ext) {
+        return Err(BpError::BadName);
+    }
+    Ok(root.join(session).join(format!("{name}.{ext}")))
+}
+
+pub fn read_file(root: &Path, session: &str, name: &str, ext: &str) -> Result<Vec<u8>, BpError> {
+    fs::read(file_path(root, session, name, ext)?).map_err(io)
+}
+
+/// Write a blueprint pair into an existing session folder. Never overwrites.
+/// `create_session` makes the session folder if it's missing (the game only creates it once a
+/// blueprint is saved in that world).
+pub fn write_blueprint(root: &Path, session: &str, name: &str, sbp: &[u8], cfg: Option<&[u8]>, create_session: bool) -> Result<(), BpError> {
+    let sbp_path = file_path(root, session, name, "sbp")?;
+    let cfg_path = file_path(root, session, name, "sbpcfg")?;
+    if !root.join(session).is_dir() {
+        if !create_session { return Err(BpError::NotFound); }
+        fs::create_dir_all(root.join(session)).map_err(io)?;
+    }
+    if sbp_path.exists() || cfg_path.exists() { return Err(BpError::Exists); }
+    fs::write(&sbp_path, sbp).map_err(io)?;
+    if let Some(cfg) = cfg {
+        if let Err(e) = fs::write(&cfg_path, cfg) {
+            let _ = fs::remove_file(&sbp_path);
+            return Err(io(e));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("fa-bp-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn rejects_traversal_and_bad_names() {
+        for bad in ["", ".", "..", "../x", "a/b", "a\\b", "C:", "x?", "trailing.", " lead", "nul\0"] {
+            assert!(!valid_component(bad), "{bad:?} should be rejected");
+        }
+        for ok in ["My Session", "Steel 360-min (v2)", "Ünïcødé"] {
+            assert!(valid_component(ok), "{ok:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn lists_sessions_and_pairs() {
+        let root = tmp("list");
+        fs::create_dir_all(root.join("Alpha")).unwrap();
+        fs::write(root.join("Alpha/Smelter.sbp"), b"12345").unwrap();
+        fs::write(root.join("Alpha/Smelter.sbpcfg"), b"c").unwrap();
+        fs::write(root.join("Alpha/Loose.sbp"), b"1").unwrap();
+        fs::write(root.join("Alpha/notes.txt"), b"x").unwrap();
+        fs::create_dir_all(root.join("Empty")).unwrap();
+
+        let s = list_sessions(&root);
+        let alpha = s.iter().find(|s| s.name == "Alpha").unwrap();
+        assert_eq!(alpha.blueprints.len(), 2);
+        let smelter = alpha.blueprints.iter().find(|b| b.name == "Smelter").unwrap();
+        assert!(smelter.has_sbp && smelter.has_cfg);
+        assert_eq!(smelter.size, 5);
+        let loose = alpha.blueprints.iter().find(|b| b.name == "Loose").unwrap();
+        assert!(loose.has_sbp && !loose.has_cfg);
+        assert!(s.iter().any(|s| s.name == "Empty"));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn detects_current_session() {
+        let base = tmp("current");
+        let root = base.join("blueprints");
+        fs::create_dir_all(root.join("Old World")).unwrap();
+        fs::write(root.join("Old World/a.sbp"), b"x").unwrap();
+        // no saves yet → newest blueprint folder
+        assert_eq!(detect_current(&root), Some(CurrentSession { name: "Old World".into(), source: "blueprints" }));
+
+        let acct = base.join("76561198000000000");
+        fs::create_dir_all(&acct).unwrap();
+        fs::write(acct.join("My manual save.sav"), b"x").unwrap(); // ignored: not an autosave
+        assert_eq!(detect_current(&root).unwrap().source, "blueprints");
+        fs::write(acct.join("Old World_autosave_0.sav"), b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(acct.join("Steel Town_autosave_2.sav"), b"x").unwrap();
+        assert_eq!(detect_current(&root), Some(CurrentSession { name: "Steel Town".into(), source: "autosave" }));
+
+        assert_eq!(session_from_autosave("A_autosave_12"), Some("A"));
+        assert_eq!(session_from_autosave("A_autosave_"), None);
+        assert_eq!(session_from_autosave("A_autosave_x"), None);
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn writes_without_overwriting() {
+        let root = tmp("write");
+        fs::create_dir_all(root.join("World")).unwrap();
+        write_blueprint(&root, "World", "Steel", b"sbp", Some(b"cfg"), false).unwrap();
+        assert_eq!(read_file(&root, "World", "Steel", "sbp").unwrap(), b"sbp");
+        assert_eq!(read_file(&root, "World", "Steel", "sbpcfg").unwrap(), b"cfg");
+        assert_eq!(write_blueprint(&root, "World", "Steel", b"new", None, false), Err(BpError::Exists));
+        assert_eq!(write_blueprint(&root, "Missing", "X", b"x", None, false), Err(BpError::NotFound));
+        assert_eq!(write_blueprint(&root, "..", "X", b"x", None, true), Err(BpError::BadName));
+        write_blueprint(&root, "New World", "First", b"x", None, true).unwrap();
+        assert!(root.join("New World/First.sbp").is_file());
+        assert_eq!(read_file(&root, "World", "../../etc", "sbp"), Err(BpError::BadName));
+        assert_eq!(read_file(&root, "World", "Steel", "exe"), Err(BpError::BadName));
+        fs::remove_dir_all(&root).ok();
+    }
+}

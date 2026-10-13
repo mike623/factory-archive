@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Archive — Shared blueprints</title>
+<style>
+  :root {
+    --bg:#0c0e11; --bg-deep:#08090b; --panel:#13161b; --panel-2:#181c22; --well:#0e1115;
+    --border:#262c35; --border-soft:#1c2128; --border-strong:#333b46;
+    --text:#e7eaef; --text-dim:#9aa3af; --text-mute:#687181;
+    --accent:#ffae3b; --accent-bright:#ffc266; --accent-press:#e8902b; --accent-ghost:rgba(255,174,59,.10); --accent-line:rgba(255,174,59,.28);
+    --ok:#5ccb8e; --ok-ghost:rgba(92,203,142,.12); --warn:#e8b34b; --danger:#e06a5a;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --sans: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f3f1ec; --bg-deep:#e7e3db; --panel:#fdfcfa; --panel-2:#f7f5f0; --well:#edeae3;
+      --border:#e1dcd3; --border-soft:#ece8e1; --border-strong:#cfc8bc;
+      --text:#23272e; --text-dim:#5a616c; --text-mute:#868d99;
+      --accent:#ef9311; --accent-bright:#f5a93a; --accent-press:#d77f08; --accent-ghost:rgba(239,147,17,.12); --accent-line:rgba(239,147,17,.42);
+      --ok:#1f9d57; --ok-ghost:rgba(31,157,87,.12); --warn:#b5821a; --danger:#cf4f3e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased;
+    background-image: linear-gradient(var(--border-soft) 1px, transparent 1px), linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+    background-size: 26px 26px; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 16px 60px; }
+  .tlabel { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-mute); font-weight:500; }
+  .mono { font-family: var(--mono); }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .logo { width:36px; height:36px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(150deg,var(--accent-bright),var(--accent-press)); color:#1a1206; font-weight:700; }
+  h1 { margin:0; font-size:20px; letter-spacing:-.01em; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  input, select { height:40px; border-radius:7px; border:1px solid var(--border); background:var(--bg-deep); color:var(--text);
+    padding:0 12px; font-family:var(--mono); font-size:13px; outline:none; min-width:0; }
+  input:focus, select:focus { border-color: var(--accent-line); }
+  input { flex: 1 1 320px; }
+  .target { margin-top:10px; font-size:12.5px; color:var(--text-dim); }
+  .target strong { color:var(--text); }
+  .pill.cur { color:var(--accent); border-color:var(--accent-line); background:var(--accent-ghost); }
+  button, a.btn { height:40px; padding:0 16px; border-radius:7px; font-family:var(--sans); font-weight:600; font-size:13px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; text-decoration:none; white-space:nowrap; }
+  .primary { background:linear-gradient(180deg,var(--accent-bright),var(--accent)); color:#1a1206; border:1px solid var(--accent-press); }
+  .ghost { background:var(--well); color:var(--text-dim); border:1px solid var(--border); }
+  button.small, a.btn.small { height:28px; padding:0 10px; font-size:11px; font-family:var(--mono); }
+  button:disabled { opacity:.5; cursor:default; }
+  .msg { margin-top:10px; font-size:12.5px; line-height:1.5; min-height:18px; }
+  .msg.ok { color:var(--ok); } .msg.err { color:var(--danger); }
+  .hint { font-size:12px; color:var(--text-mute); line-height:1.5; margin:10px 0 0; }
+  .session h2 { margin:0; font-size:15px; display:flex; align-items:baseline; gap:10px; }
+  .bp { display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--border-soft); flex-wrap:wrap; }
+  .bp:first-of-type { border-top:none; }
+  .bp .name { flex:1 1 200px; font-weight:600; font-size:13.5px; min-width:0; overflow-wrap:anywhere; }
+  .pill { font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; background:var(--off,transparent); border:1px solid var(--border); color:var(--text-mute); }
+  .empty { color:var(--text-mute); font-size:13px; padding:8px 0; }
+  .toolbar { display:flex; align-items:center; justify-content:space-between; margin: 22px 0 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo" aria-hidden="true">FA</div>
+    <div>
+      <h1>Shared blueprints</h1>
+      <div class="tlabel" style="margin-top:3px">Factory Archive · host's world</div>
+    </div>
+  </header>
+
+  <section class="card" aria-labelledby="add-title">
+    <div class="tlabel" id="add-title" style="margin-bottom:10px">Add a blueprint to the host's world</div>
+    <form id="import" class="row">
+      <input id="url" type="url" required placeholder="https://satisfactory-calculator.com/… or satisfactoryblueprints.com/…" aria-label="Blueprint link">
+      <button class="primary" id="submit" type="submit">Add to world</button>
+    </form>
+    <div id="target" class="target"></div>
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+    <p class="hint">Blueprints go straight into the host's game folder. The host has to quit to the main menu and load the session again before they show up in-game.</p>
+  </section>
+
+  <div class="toolbar">
+    <span class="tlabel">Host's blueprints by world session</span>
+    <button class="ghost small" id="refresh" type="button">Refresh</button>
+  </div>
+  <div id="sessions"><div class="empty">Loading…</div></div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
+  const kb = (b) => b < 1024 ? b + ' B' : (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
+  const fileUrl = (s, n, ext) => '/api/file/' + encodeURIComponent(s) + '/' + encodeURIComponent(n + '.' + ext);
+
+  async function load() {
+    const box = $('sessions');
+    let sessions, target;
+    try {
+      const r = await fetch('/api/sessions');
+      ({ sessions, target } = await r.json());
+    } catch (e) {
+      box.replaceChildren(el('div', { className: 'empty', textContent: "Couldn't reach the host. Is sharing still on?" }));
+      return;
+    }
+    const why = { autosave: "the host's current world", blueprints: "the host's most recently used world", host: 'picked by the host' };
+    $('target').replaceChildren(...(target
+      ? ['Adding to ', el('strong', { textContent: target.name }), ' · ' + (why[target.source] || '')]
+      : ["The host hasn't picked a world yet."]));
+    $('submit').disabled = !target;
+
+    if (target && !sessions.some(s => s.name === target.name)) sessions.unshift({ name: target.name, blueprints: [] });
+    if (!sessions.length) {
+      box.replaceChildren(el('div', { className: 'card empty', textContent: "The host has no world sessions with blueprints yet. A session folder appears after the host saves a blueprint in-game." }));
+      return;
+    }
+    box.replaceChildren(...sessions.map(s => el('section', { className: 'card session' },
+      el('h2', {}, s.name, target && target.name === s.name ? el('span', { className: 'pill cur', textContent: 'CURRENT' }) : '', el('span', { className: 'mono', style: 'font-size:11px;color:var(--text-mute);font-weight:400',
+        textContent: s.blueprints.length + ' blueprint' + (s.blueprints.length === 1 ? '' : 's') })),
+      ...(s.blueprints.length ? s.blueprints.map(b => el('div', { className: 'bp' },
+        el('span', { className: 'name', textContent: b.name }),
+        b.hasSbp ? el('span', { className: 'pill', textContent: kb(b.size) }) : '',
+        b.hasSbp ? el('a', { className: 'btn ghost small', href: fileUrl(s.name, b.name, 'sbp'), download: b.name + '.sbp', textContent: '↓ .sbp' }) : '',
+        b.hasCfg ? el('a', { className: 'btn ghost small', href: fileUrl(s.name, b.name, 'sbpcfg'), download: b.name + '.sbpcfg', textContent: '↓ .sbpcfg' }) : '',
+      )) : [el('div', { className: 'empty', textContent: 'No blueprints in this session yet.' })]),
+    )));
+  }
+
+  $('import').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = $('msg'), btn = $('submit');
+    btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Adding…';
+    try {
+      const r = await fetch('/api/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: $('url').value.trim() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) {
+        msg.className = 'msg ok';
+        msg.textContent = '✓ Added "' + data.name + '" to ' + data.session + '. Ask the host to reload the session.';
+        $('url').value = '';
+        load();
+      } else {
+        msg.className = 'msg err';
+        msg.textContent = data.error || ('Something went wrong (' + r.status + ').');
+      }
+    } catch (err) {
+      msg.className = 'msg err'; msg.textContent = "Couldn't reach the host. Is sharing still on?";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $('refresh').addEventListener('click', load);
+  load();
+</script>
+</body>
+</html>

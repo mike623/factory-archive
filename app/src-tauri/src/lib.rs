@@ -1,6 +1,11 @@
+mod blueprints;
+mod resolve;
+mod share;
+
 use serde::Serialize;
+use share::{ShareInfo, ShareState};
 use std::path::{Path, PathBuf};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// A place Satisfactory keeps blueprints. The game stores them under
 /// `<LocalAppData>\FactoryGame\Saved\SaveGames\blueprints\<session name>\`.
@@ -73,12 +78,48 @@ fn game_folders(app: tauri::AppHandle) -> Result<Vec<GameFolder>, String> {
     Ok(out)
 }
 
+/// Start sharing `root` (a game's `blueprints` folder) with players on the local network.
+#[tauri::command]
+fn share_start(app: tauri::AppHandle, state: tauri::State<'_, ShareState>, root: String) -> Result<ShareInfo, String> {
+    state.start(PathBuf::from(root), move |ev| {
+        let _ = app.emit("share-imported", ev);
+    })
+}
+
+#[tauri::command]
+fn share_stop(state: tauri::State<'_, ShareState>) {
+    state.stop();
+}
+
+/// Sessions in the blueprints folder plus the detected current world, for the host's picker.
+#[tauri::command]
+fn sessions(state: tauri::State<'_, ShareState>, root: String) -> serde_json::Value {
+    let root = PathBuf::from(root);
+    serde_json::json!({
+        "detected": blueprints::detect_current(&root),
+        "pinned": state.pinned(),
+        "sessions": blueprints::list_sessions(&root).into_iter().map(|s| s.name).collect::<Vec<_>>(),
+    })
+}
+
+/// Pin friends' imports to a session (`None` = follow the detected current world).
+#[tauri::command]
+fn share_set_session(state: tauri::State<'_, ShareState>, name: Option<String>) -> Result<(), String> {
+    state.set_session(name)
+}
+
+#[tauri::command]
+fn share_status(state: tauri::State<'_, ShareState>) -> Option<ShareInfo> {
+    state.status()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![game_folders])
+        .manage(ShareState::default())
+        .invoke_handler(tauri::generate_handler![game_folders, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

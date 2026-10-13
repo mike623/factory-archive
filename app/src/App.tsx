@@ -10,6 +10,8 @@ import { ExportDrawer, ImportModal } from './modals';
 import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
+import { useShare } from './share';
+import { ImportToasts } from './shareCard';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -60,6 +62,7 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const gameFolder = useGameFolder();
+  const share = useShare(gameFolder.current?.path ?? null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -111,7 +114,7 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -155,6 +158,7 @@ export default function App() {
         <Btn variant="primary" icon={IcExport} onClick={() => setExportOpen(true)}>Export {sel.size} to game folder</Btn>
       </div>}
 
+      <ImportToasts share={share} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint} />
       <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}
         onRemove={toggleSel} onExported={markInstalled} />

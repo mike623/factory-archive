@@ -47,3 +47,40 @@ export function tailPath(p: string, segments = 4) {
   const parts = p.split(/[\\/]/).filter(Boolean);
   return parts.length <= segments ? p : '…' + sep + parts.slice(-segments).join(sep);
 }
+
+/* ---------- share with players (LAN web page served by the host app) ---------- */
+
+export interface ShareInfo { port: number; urls: string[]; root: string }
+export interface SharedImport { name: string; session: string }
+
+export const canShare = () => isTauri();
+
+export async function shareStart(root: string): Promise<ShareInfo> {
+  return invoke<ShareInfo>('share_start', { root });
+}
+export async function shareStop(): Promise<void> {
+  if (isTauri()) await invoke('share_stop');
+}
+export async function shareStatus(): Promise<ShareInfo | null> {
+  return isTauri() ? invoke<ShareInfo | null>('share_status') : null;
+}
+/** Fires when a player adds a blueprint through the share page. Returns an unsubscribe function. */
+export async function onSharedImport(cb: (e: SharedImport) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<SharedImport>('share-imported', e => cb(e.payload));
+}
+
+export interface SessionsInfo {
+  detected: { name: string; source: 'autosave' | 'blueprints' } | null;
+  pinned: string | null;
+  sessions: string[];
+}
+export async function listSessions(root: string): Promise<SessionsInfo> {
+  if (!isTauri()) return { detected: { name: 'Preview World', source: 'autosave' }, pinned: null, sessions: ['Preview World'] };
+  return invoke<SessionsInfo>('sessions', { root });
+}
+/** Pin friends' imports to one session; null follows the detected current world. */
+export async function shareSetSession(name: string | null): Promise<void> {
+  if (isTauri()) await invoke('share_set_session', { name });
+}

@@ -9,6 +9,8 @@ import {
 import type { Theme } from './theme';
 import { tailPath } from './platform';
 import type { GameFolderState } from './gameFolder';
+import type { ShareStateUI } from './share';
+import { ShareCard } from './shareCard';
 
 export interface Filters {
   tags: string[];
@@ -28,10 +30,10 @@ const NAV: { id: NavId; label: string; icon: Icon }[] = [
 ];
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
-  theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState;
+  theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState; share: ShareStateUI;
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
@@ -96,6 +98,11 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             );
           })}
         </div>
+      </div>
+
+      <div style={{ padding: '0 12px 10px' }}>
+        <div className="tlabel" style={{ padding: '0 0 8px 6px' }}>Multiplayer</div>
+        <ShareCard share={share} />
       </div>
 
       {/* sync footer */}

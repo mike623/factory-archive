@@ -65,3 +65,4 @@ export const IcBolt = (p: IconProps) => <I {...p}><path d="M13 2L5 14h6l-1 8 8-1
 /* ---- theme ---- */
 export const IcSun = (p: IconProps) => <I {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></I>;
 export const IcMoon = (p: IconProps) => <I {...p}><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></I>;
+export const IcShare = (p: IconProps) => <I {...p}><circle cx="12" cy="12" r="2"/><path d="M8.5 15.5a5 5 0 010-7M15.5 8.5a5 5 0 010 7M5.6 18.4a9 9 0 010-12.8M18.4 5.6a9 9 0 010 12.8"/></I>;
