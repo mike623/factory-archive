@@ -16,7 +16,7 @@ import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, type Outcome,
+  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, renameBlueprint, type Outcome,
 } from './platform';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
@@ -189,6 +189,23 @@ export default function App() {
     return out;
   };
 
+  const renameBp = async (b: Blueprint, name: string) => {
+    const newId = b.onDisk ? `disk:${b.session}/${name}` : b.id;
+    if (b.onDisk && isTauri()) {
+      const root = gameFolder.current?.path;
+      if (!root || !b.session) throw new Error('Satisfactory folder not found');
+      await renameBlueprint(root, b.session, b.name, name);
+      await disk.reload(); // before swapping ids, so the open page doesn't blink out
+    } else {
+      setLibrary(l => l.map(x => x.id === b.id ? { ...x, id: newId, name } : x)); // browser preview
+    }
+    // favorites, Import Queue, selection and the open page follow the new name
+    const swap = (ids: string[]) => ids.map(x => x === b.id ? newId : x);
+    setFavList(swap); setImported(swap);
+    setSel(s => s.has(b.id) ? new Set(swap([...s])) : s);
+    setDetailId(d => d === b.id ? newId : d);
+  };
+
   // friends' imports through the share page land in Import Queue too
   const lastShared = share.imports[0];
   useEffect(() => { if (lastShared) rememberImported([`disk:${lastShared.session}/${lastShared.name}`]); }, [lastShared]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -238,7 +255,7 @@ export default function App() {
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
-              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder}
+              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp}
               root={gameFolder.current?.path ?? null} />
           </main>
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>

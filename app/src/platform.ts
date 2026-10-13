@@ -118,4 +118,9 @@ export async function copyBlueprints(root: string, items: [session: string, name
   return invoke<Outcome[]>('copy_blueprints', { root, items, target });
 }
 
+/** Rename a blueprint's .sbp (and .sbpcfg) inside its world session. Refuses to overwrite. */
+export async function renameBlueprint(root: string, session: string, from: string, to: string): Promise<void> {
+  await invoke('rename_blueprint', { root, session, from, to });
+}
+
 export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);

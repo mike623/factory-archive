@@ -216,6 +216,12 @@ fn copy_blueprints(root: String, items: Vec<(String, String)>, target: String) -
     items.iter().map(|(from, name)| blueprints::copy_outcome(&root, from, name, &target)).collect()
 }
 
+/// Rename a blueprint's files in its world session.
+#[tauri::command]
+fn rename_blueprint(root: String, session: String, from: String, to: String) -> Result<(), String> {
+    blueprints::rename(&PathBuf::from(root), &session, &from, &to).map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LinkImport {
@@ -264,7 +270,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, rename_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

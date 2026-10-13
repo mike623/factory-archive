@@ -254,6 +254,33 @@ pub fn copy_outcome(root: &Path, from: &str, name: &str, to: &str) -> Outcome {
     Outcome::from(name, copy_between(root, from, name, to))
 }
 
+/// Rename a blueprint (its `.sbp` and `.sbpcfg` if present) inside its session. The game shows the
+/// file name as the blueprint's name. Never overwrites another blueprint; a change of letter case
+/// only is allowed on case-insensitive disks (Windows, macOS), where the "other" file is itself.
+pub fn rename(root: &Path, session: &str, from: &str, to: &str) -> Result<(), BpError> {
+    let (old_sbp, old_cfg) = (file_path(root, session, from, "sbp")?, file_path(root, session, from, "sbpcfg")?);
+    let (new_sbp, new_cfg) = (file_path(root, session, to, "sbp")?, file_path(root, session, to, "sbpcfg")?);
+    if from == to { return Ok(()); }
+    if !old_sbp.is_file() { return Err(BpError::NotFound); }
+    let case_only = from.to_lowercase() == to.to_lowercase();
+    // exact names in the folder: on a case-insensitive disk `new_sbp.exists()` is true for the source itself
+    let listed: Vec<String> = fs::read_dir(root.join(session)).map_err(io)?
+        .flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let taken = |p: &Path| {
+        let file = p.file_name().unwrap().to_string_lossy();
+        listed.iter().any(|f| *f == file) || (!case_only && p.exists())
+    };
+    if taken(&new_sbp) || taken(&new_cfg) { return Err(BpError::Exists); }
+    fs::rename(&old_sbp, &new_sbp).map_err(io)?;
+    if old_cfg.is_file() {
+        if let Err(e) = fs::rename(&old_cfg, &new_cfg) {
+            let _ = fs::rename(&new_sbp, &old_sbp);
+            return Err(io(e));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +402,33 @@ mod tests {
         assert!(root.join("New World/First.sbp").is_file());
         assert_eq!(read_file(&root, "World", "../../etc", "sbp"), Err(BpError::BadName));
         assert_eq!(read_file(&root, "World", "Steel", "exe"), Err(BpError::BadName));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn renames_pairs_without_overwriting() {
+        let root = tmp("rename");
+        fs::create_dir_all(root.join("World")).unwrap();
+        write_blueprint(&root, "World", "Steel", b"S", Some(b"C"), false).unwrap();
+        write_blueprint(&root, "World", "Bus", b"B", None, false).unwrap();
+
+        rename(&root, "World", "Steel", "Steel v2").unwrap();
+        assert_eq!(read_file(&root, "World", "Steel v2", "sbp").unwrap(), b"S");
+        assert_eq!(read_file(&root, "World", "Steel v2", "sbpcfg").unwrap(), b"C");
+        assert!(!root.join("World/Steel.sbp").exists() && !root.join("World/Steel.sbpcfg").exists());
+
+        rename(&root, "World", "Bus", "Main Bus").unwrap();
+        assert!(root.join("World/Main Bus.sbp").is_file());
+        assert!(!root.join("World/Main Bus.sbpcfg").exists());
+
+        assert_eq!(rename(&root, "World", "Main Bus", "Steel v2"), Err(BpError::Exists));
+        assert_eq!(read_file(&root, "World", "Main Bus", "sbp").unwrap(), b"B");
+        // case-only change works on case-insensitive and case-sensitive disks alike
+        rename(&root, "World", "Main Bus", "main bus").unwrap();
+        assert!(fs::read_dir(root.join("World")).unwrap().flatten().any(|e| e.file_name() == "main bus.sbp"));
+        assert_eq!(rename(&root, "World", "Missing", "X"), Err(BpError::NotFound));
+        assert_eq!(rename(&root, "World", "main bus", "../escape"), Err(BpError::BadName));
+        assert_eq!(rename(&root, "World", "main bus", ""), Err(BpError::BadName));
         fs::remove_dir_all(&root).ok();
     }
 }

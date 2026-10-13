@@ -4,7 +4,7 @@ import { SOURCES, STATUS, type Blueprint } from './data';
 import { Btn, IconBtn, MetaStat, ModdedBadge, SourceBadge, SourceMark, StatusPill, Tag, Thumb } from './components';
 import {
   IcArrowLeft, IcCalendar, IcFolder, IcCheck, IcChevron, IcCopy, IcDimensions, IcDownload, IcExternal, IcFile, IcInfo,
-  IcLayers, IcLink, IcMachine, IcMaterial, IcPower, IcRefresh, IcStar, IcTag, IcUpload, IcUser, IcWarn, type Icon,
+  IcLayers, IcLink, IcMachine, IcMaterial, IcPencil, IcPower, IcRefresh, IcStar, IcTag, IcUpload, IcUser, IcWarn, type Icon,
 } from './icons';
 import { copyText, openExternal } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
@@ -83,8 +83,50 @@ function HeroShot({ bp, active, shots, image, onDropImage }: {
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onToggleFav, root = null }: {
+/** Blueprint name, with an inline editor when `onRename` is given. */
+function NameTitle({ bp, onRename }: { bp: Blueprint; onRename?: (b: Blueprint, name: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setDraft(null); setError(null); }, [bp.id]);
+  const title = { margin: 0, fontSize: 27, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.1 } as const;
+
+  if (draft === null) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <h1 style={{ ...title, textWrap: 'balance' }}>{bp.name}</h1>
+      {onRename && <IconBtn icon={IcPencil} title="Rename" onClick={() => setDraft(bp.name)} />}
+    </div>
+  );
+  const name = draft.trim();
+  const save = async () => {
+    if (busy) return;
+    if (!name || name === bp.name) { setDraft(null); return; }
+    setBusy(true); setError(null);
+    try { await onRename!(bp, name); setDraft(null); }
+    catch (e) { setError(String(e).replace(/^Error: /, '')); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input autoFocus value={draft} aria-label="Blueprint name" disabled={busy} maxLength={128}
+          onChange={e => { setDraft(e.target.value); setError(null); }}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); setDraft(null); } }}
+          style={{ ...title, flex: 1, minWidth: 0, padding: '2px 8px', borderRadius: 'var(--r)', background: 'var(--bg-deep)',
+          border: `1px solid ${error ? 'var(--warn)' : 'var(--accent-line)'}`, color: 'var(--text)',
+          fontFamily: 'inherit', outline: 'none' }} />
+        <Btn variant="primary" icon={IcCheck} disabled={busy || !name} onClick={save}>{busy ? 'Saving…' : 'Save'}</Btn>
+        <Btn variant="ghost" disabled={busy} onClick={() => setDraft(null)}>Cancel</Btn>
+      </div>
+      <div role={error ? 'alert' : undefined} style={{ marginTop: 6, fontSize: 11.5, color: error ? 'var(--warn)' : 'var(--text-mute)' }}>
+        {error ?? (bp.onDisk ? 'Renames the files in the game folder. Reload the save in-game to see the new name.' : '')}</div>
+    </div>
+  );
+}
+
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, fav, onToggleFav, root = null }: {
   bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
+  onRename?: (b: Blueprint, name: string) => Promise<void>;
   fav: boolean; onToggleFav: () => void;
   /** game blueprints folder, to read this blueprint's own files */
   root?: string | null;
@@ -115,8 +157,7 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onTog
                 {bp.modded && <ModdedBadge large />}
                 {bp.gameVersion && <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-mute)' }}>v{bp.gameVersion}</span>}
               </div>
-              <h1 style={{ margin: 0, fontSize: 27, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.1,
-                textWrap: 'balance' }}>{bp.name}</h1>
+              <NameTitle bp={bp} onRename={onRename} />
               {(bp.title || info?.config) && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 14, color: 'var(--text-dim)' }}>
                 {info?.config && <ConfigSwatch config={info.config} />}{bp.title}</div>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10, color: 'var(--text-dim)', flexWrap: 'wrap' }}>

@@ -34,6 +34,7 @@ export const IcExport = (p: IconProps) => <I {...p}><path d="M14 3h7v7"/><path d
 export const IcLink = (p: IconProps) => <I {...p}><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 105.7 5.7l1.5-1.5"/></I>;
 export const IcClose = (p: IconProps) => <I {...p}><path d="M6 6l12 12M18 6L6 18"/></I>;
 export const IcCheck = (p: IconProps) => <I {...p}><path d="M5 12.5l4.5 4.5L19 7"/></I>;
+export const IcPencil = (p: IconProps) => <I {...p}><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></I>;
 export const IcCopy = (p: IconProps) => <I {...p}><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></I>;
 export const IcChevron = (p: IconProps) => <I {...p}><path d="M9 6l6 6-6 6"/></I>;
 export const IcChevDown = (p: IconProps) => <I {...p}><path d="M6 9l6 6 6-6"/></I>;
