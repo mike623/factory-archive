@@ -19,6 +19,8 @@ pub struct BlueprintFile {
     pub has_cfg: bool,
     /// size of the .sbp in bytes
     pub size: u64,
+    /// newest modification time of the pair, unix seconds
+    pub modified: u64,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -90,8 +92,10 @@ pub fn list_sessions(root: &Path) -> Vec<Session> {
                 newest = newest.max(modified(&fp));
                 let stem = stem.to_string_lossy().into_owned();
                 let e = by_name.entry(stem.clone()).or_insert(BlueprintFile {
-                    name: stem, has_sbp: false, has_cfg: false, size: 0,
+                    name: stem, has_sbp: false, has_cfg: false, size: 0, modified: 0,
                 });
+                let secs = modified(&fp).duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                e.modified = e.modified.max(secs);
                 if ext == "sbp" {
                     e.has_sbp = true;
                     e.size = f.metadata().map(|m| m.len()).unwrap_or(0);
@@ -213,6 +217,7 @@ mod tests {
         let smelter = alpha.blueprints.iter().find(|b| b.name == "Smelter").unwrap();
         assert!(smelter.has_sbp && smelter.has_cfg);
         assert_eq!(smelter.size, 5);
+        assert!(smelter.modified > 0);
         let loose = alpha.blueprints.iter().find(|b| b.name == "Loose").unwrap();
         assert!(loose.has_sbp && !loose.has_cfg);
         assert!(s.iter().any(|s| s.name == "Empty"));

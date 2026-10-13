@@ -121,6 +121,18 @@ fn sessions(state: tauri::State<'_, ShareState>, root: String) -> serde_json::Va
     })
 }
 
+/// Every blueprint on disk, grouped by world session (newest session first).
+#[tauri::command]
+fn library(root: String) -> Vec<blueprints::Session> {
+    blueprints::list_sessions(&PathBuf::from(root))
+}
+
+/// Resolve a SCIM / Satisfactory Blueprints / direct link. Not built yet: always reports why.
+#[tauri::command]
+fn resolve_link(url: String) -> Result<String, String> {
+    resolve::resolve(&url).map(|bp| bp.name)
+}
+
 /// Pin friends' imports to a session (`None` = follow the detected current world).
 #[tauri::command]
 fn share_set_session(state: tauri::State<'_, ShareState>, name: Option<String>) -> Result<(), String> {
@@ -140,7 +152,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, resolve_link, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

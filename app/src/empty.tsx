@@ -60,8 +60,8 @@ export function EmptyState({ onImport }: { onImport: () => void }) {
   );
 }
 
-export function NoResults({ onReset, title = 'No blueprints match', hint = 'Try a different search or relax your filters.' }:
-  { onReset?: () => void; title?: string; hint?: string }) {
+export function NoResults({ onReset, title = 'No blueprints match', hint = 'Try a different search or relax your filters.', resetLabel = 'Reset filters' }:
+  { onReset?: () => void; title?: string; hint?: string; resetLabel?: string }) {
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: 40, color: 'var(--text-mute)' }}>
@@ -70,7 +70,7 @@ export function NoResults({ onReset, title = 'No blueprints match', hint = 'Try 
         <IcSearch size={26} /></div>
       <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)' }}>{title}</div>
       <p style={{ fontSize: 13, margin: '8px 0 18px' }}>{hint}</p>
-      {onReset && <Btn variant="ghost" icon={IcRefresh} onClick={onReset}>Reset filters</Btn>}
+      {onReset && <Btn variant="ghost" icon={IcRefresh} onClick={onReset}>{resetLabel}</Btn>}
     </div>
   );
 }

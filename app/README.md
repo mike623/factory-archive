@@ -67,6 +67,15 @@ git push origin v0.2.0
 
 You can also run the **Release** workflow by hand from the Actions tab. It stamps the version, builds Windows and macOS, signs them, and publishes a GitHub Release with the installers and `latest.json`, which installed apps read to find updates. Builds from the plain **Desktop build** workflow don't include the update packages, so install from a Release to get auto-updates.
 
+## Library: your real blueprints, filtered by world
+
+In the desktop app the Library lists the actual `.sbp` files in the game's blueprints folder, across every world session. It re-scans whenever the window gets focus and after a friend imports something.
+
+- **World session filter** (top of the filter panel): it defaults to the **current save's session**, using the same detection as Share (latest autosave, or the host's pick), marked **CURRENT**. Choose **All sessions** or another world to look elsewhere. **Reset filters** goes back to the current world.
+- Files on disk carry only a name, size, date and whether the `.sbpcfg` exists, so the filters for site metadata (category, tags, game version, modded) are hidden for them.
+- A blueprint's detail page shows its world and real file names, and **Open folder** opens that world's folder.
+- Browser preview: `npm run dev` shows the sample data split across two pretend worlds. Add `?disk` to the URL to preview how real files look.
+
 ## Open the blueprint folder
 
 The folder button in the sidebar footer opens the current world's blueprint folder in Explorer or Finder. That's the session that imports go to, or the blueprints root if that session has no folder yet. After a batch export, **Open** in the export drawer does the same.
@@ -108,7 +117,7 @@ Changes from the prototype: the fake macOS window frame, the scale-to-fit stage,
 
 ## Still mocked
 
-- **Library data** is the sample set in `src/data.ts`. It lives in memory and resets on restart.
+- **Library data** is real in the desktop app (files on disk). The sample set in `src/data.ts` only shows up in the browser preview.
 - **Link import** isn't built yet. In the app, Import returns a fixed preview (`mockResolve` in `src/modals.tsx`). On the share page, `resolve` in `src-tauri/src/resolve.rs` reports "not available yet" so no fake files are ever written. Neither site documents its download links, so this needs the real pages examined first.
 - **Export** simulates copy progress. It doesn't write any files yet.
 - **Real and tested (`cargo test`):** the share server (`share.rs`), reading, writing and detecting world sessions (`blueprints.rs`), and source detection (`resolve.rs`).

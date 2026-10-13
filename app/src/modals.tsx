@@ -1,12 +1,13 @@
 // modals.tsx — import-from-URL modal + batch export drawer
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { SOURCES, type Blueprint, type SourceId } from './data';
+import { dimsLabel, SOURCES, type Blueprint, type SourceId } from './data';
 import { Btn, Dot, FilePair, HeaderGlyph, IconBtn, MiniTag, SourceBadge, SourceMark, Thumb } from './components';
 import {
   IcCheck, IcClose, IcDimensions, IcExport, IcFolder, IcLink, IcMachine, IcPlus, IcPower, IcSearch, IcUpload,
   IcUser, IcWarn, type Icon,
 } from './icons';
 import { openFolder, tailPath } from './platform';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { GameFolderState } from './gameFolder';
 
 export function detectSource(url: string): SourceId | null {
@@ -35,12 +36,13 @@ function mockResolve(src: SourceId, url: string): Blueprint {
   };
 }
 
-type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done';
+type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed';
 
 export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void }) {
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const [step, setStep] = useState(0);
+  const [failure, setFailure] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<number[]>([]);
 
@@ -53,9 +55,14 @@ export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: 
   const src = detectSource(url);
   const resolved = src ? mockResolve(src, url.trim()) : null;
 
-  const resolve = () => {
+  const resolve = async () => {
     if (!src || phase === 'resolving') return;
-    setPhase('resolving'); setStep(0);
+    setPhase('resolving'); setStep(0); setFailure(null);
+    if (isTauri()) {
+      // the desktop app never adds placeholder data: it uses the real resolver, which reports what's missing
+      try { await invoke<string>('resolve_link', { url: url.trim() }); }
+      catch (e) { setFailure(String(e)); setPhase('failed'); return; }
+    }
     let i = 0;
     const t = window.setInterval(() => { i++; setStep(i); if (i >= STEPS.length) { clearInterval(t); setPhase('resolved'); } }, 480);
     timers.current.push(t);
@@ -118,6 +125,11 @@ export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: 
             </div>
           </div>}
 
+          {phase === 'failed' && failure && <div role="alert" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '12px 13px',
+            borderRadius: 'var(--r)', background: 'var(--warn-ghost)', border: '1px solid color-mix(in oklab,var(--warn) 30%,transparent)',
+            color: 'var(--warn)', fontSize: 12.5, lineHeight: 1.5 }}>
+            <IcWarn size={15} style={{ flexShrink: 0, marginTop: 2 }} /><span>{failure}</span></div>}
+
           {/* resolving */}
           {phase === 'resolving' && <div style={{ marginTop: 14, borderRadius: 'var(--r)', background: 'var(--bg-deep)',
             border: '1px solid var(--border)', padding: '14px 15px' }}>
@@ -148,9 +160,9 @@ export function ImportModal({ open, onClose, onAdd }: { open: boolean; onClose: 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, color: 'var(--text-mute)' }}>
                   <IcUser size={12} /><span className="mono" style={{ fontSize: 11 }}>{resolved.author}</span></div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginTop: 9 }}>
-                  <Meta icon={IcDimensions}>{`${resolved.dims.x}×${resolved.dims.y}×${resolved.dims.z}`}</Meta>
+                  <Meta icon={IcDimensions}>{dimsLabel(resolved)}</Meta>
                   <Meta icon={IcMachine}>{resolved.machines}</Meta>
-                  <Meta icon={IcPower}>{`${resolved.power.use}MW`}</Meta>
+                  <Meta icon={IcPower}>{`${resolved.power?.use ?? 0}MW`}</Meta>
                 </div>
               </div>
             </div>

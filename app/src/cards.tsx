@@ -1,8 +1,8 @@
 // cards.tsx — top bar, blueprint card/row, library body
 import { useState, type Ref } from 'react';
-import type { Blueprint } from './data';
+import { dimsLabel, type Blueprint } from './data';
 import { Btn, Check, FilePair, IconBtn, MiniTag, ModdedBadge, SourceBadge, StatusPill, Thumb } from './components';
-import { IcChevron, IcClose, IcFilter, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
+import { IcChevron, IcClose, IcFilter, IcFolder, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
 
 export type SortKey = 'recent' | 'name' | 'downloads' | 'power';
 export type ViewMode = 'grid' | 'list';
@@ -87,11 +87,11 @@ export function BlueprintCard({ bp, selected, onSelect, onOpen }: ItemProps) {
       transform: hover ? 'translateY(-2px)' : 'none', transition: 'all .18s var(--ease)' }}>
       {/* thumb */}
       <div style={{ position: 'relative', height: 158, borderBottom: '1px solid var(--border-soft)' }}>
-        <Thumb hue={bp.hue} seed={bp.seed} label={`${bp.dims.x}×${bp.dims.y}×${bp.dims.z} · ${bp.shots} SHOTS`} />
+        <Thumb hue={bp.hue} seed={bp.seed} label={dimsLabel(bp) ? `${dimsLabel(bp)} · ${bp.shots} SHOTS` : `${bp.sizeKB} KB · .SBP`} />
         <div style={{ position: 'absolute', top: 9, left: 9, right: 9, display: 'flex', justifyContent: 'space-between',
           alignItems: 'flex-start', pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto', opacity: hover || selected ? 1 : 0, transition: 'opacity .15s' }}>
-            <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />
+            {!bp.onDisk && <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />}
           </div>
           <SourceBadge src={bp.source} />
         </div>
@@ -102,10 +102,14 @@ export function BlueprintCard({ bp, selected, onSelect, onOpen }: ItemProps) {
       <div style={{ padding: '12px 13px 13px' }}>
         <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: '-.01em', lineHeight: 1.25,
           textWrap: 'pretty' }}>{bp.name}</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: 'var(--text-mute)' }}>
-          <IcUser size={12} /><span className="mono" style={{ fontSize: 11 }}>{bp.author}</span>
-          <span style={{ opacity: .4 }}>·</span>
-          <span className="mono" style={{ fontSize: 11 }}>v{bp.gameVersion}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: 'var(--text-mute)', minWidth: 0 }}>
+          {bp.author
+            ? <><IcUser size={12} /><span className="mono" style={{ fontSize: 11 }}>{bp.author}</span></>
+            : bp.session && <><IcFolder size={12} style={{ flexShrink: 0 }} /><span className="mono" style={{ fontSize: 11,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bp.session}</span></>}
+          {bp.gameVersion && <><span style={{ opacity: .4 }}>·</span>
+            <span className="mono" style={{ fontSize: 11 }}>v{bp.gameVersion}</span></>}
+          {bp.onDisk && <><span style={{ opacity: .4 }}>·</span><span className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{bp.added}</span></>}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 11 }}>
           {bp.tags.slice(0, 3).map(t => <MiniTag key={t}>{t}</MiniTag>)}
@@ -116,11 +120,12 @@ export function BlueprintCard({ bp, selected, onSelect, onOpen }: ItemProps) {
           paddingTop: 11, borderTop: '1px solid var(--border-soft)' }}>
           <FilePair files={bp.files} compact />
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, color: 'var(--text-mute)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Machines">
-              <IcMachine size={13} /><span className="mono" style={{ fontSize: 11 }}>{bp.machines}</span></span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={bp.power.gen ? 'Power generated (MW)' : 'Power draw (MW)'}>
+            {bp.machines != null && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Machines">
+              <IcMachine size={13} /><span className="mono" style={{ fontSize: 11 }}>{bp.machines}</span></span>}
+            {bp.power && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={bp.power.gen ? 'Power generated (MW)' : 'Power draw (MW)'}>
               <IcPower size={13} style={{ color: bp.power.gen ? 'var(--ok)' : 'var(--accent)' }} />
-              <span className="mono" style={{ fontSize: 11 }}>{bp.power.gen || bp.power.use}</span></span>
+              <span className="mono" style={{ fontSize: 11 }}>{bp.power.gen || bp.power.use}</span></span>}
+            {bp.onDisk && <span className="mono" style={{ fontSize: 11 }} title=".sbp size">{bp.sizeKB} KB</span>}
           </div>
         </div>
       </div>
@@ -141,14 +146,15 @@ export function BlueprintRow({ bp, selected, onSelect, onOpen }: ItemProps) {
       background: selected ? 'var(--accent-ghost)' : hover ? 'var(--panel)' : 'transparent', transition: 'background .12s' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         <div style={{ opacity: hover || selected ? 1 : .25, transition: 'opacity .15s' }}>
-          <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} /></div>
+          {bp.onDisk ? <span style={{ display: 'block', width: 18 }} /> : <Check checked={selected} onChange={onSelect} label={`Select ${bp.name}`} />}</div>
         <div style={{ width: 64, height: 42, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
           border: '1px solid var(--border)' }}><Thumb hue={bp.hue} seed={bp.seed} label="" /></div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden',
             textOverflow: 'ellipsis' }}>{bp.name}</div>
           <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-mute)', marginTop: 2 }}>
-            {bp.author} · v{bp.gameVersion} · {bp.dims.x}×{bp.dims.y}×{bp.dims.z}</div>
+            {(bp.onDisk ? [bp.session, `${bp.sizeKB} KB`, bp.added] : [bp.author, bp.gameVersion && `v${bp.gameVersion}`, dimsLabel(bp)])
+              .filter(Boolean).join(' · ')}</div>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', overflow: 'hidden', maxHeight: 24 }}>

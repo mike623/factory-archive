@@ -9,15 +9,10 @@ export interface Status { id: StatusId; label: string; color: string; ghost: str
 export interface Blueprint {
   id: string;
   name: string;
-  author: string;
   source: SourceId;
   category: string;
   tags: string[];
-  gameVersion: string;
   modded: boolean;
-  dims: { x: number; y: number; z: number };
-  power: { use: number; gen: number };
-  machines: number;
   materials: string[];
   shots: number;
   files: { sbp: boolean; sbpcfg: boolean };
@@ -26,10 +21,21 @@ export interface Blueprint {
   hue: number;
   seed: number;
   sizeKB: number;
-  downloads: number;
+  /** YYYY-MM-DD */
   added: string;
   notes: string;
   url: string;
+  /** world session folder it lives in (blueprints read from disk) */
+  session?: string;
+  /** true when this entry is a real .sbp file in the game folder */
+  onDisk?: boolean;
+  // Metadata from blueprint sites. Files on disk don't carry it, so it can be missing.
+  author?: string;
+  gameVersion?: string;
+  dims?: { x: number; y: number; z: number };
+  power?: { use: number; gen: number };
+  machines?: number;
+  downloads?: number;
 }
 
 export const SOURCES: Record<SourceId, Source> = {
@@ -162,3 +168,8 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
     url:'',
   },
 ];
+
+/** "32×24×18", or null when the size is unknown (files on disk) */
+export const dimsLabel = (b: Blueprint) => b.dims ? `${b.dims.x}×${b.dims.y}×${b.dims.z}` : null;
+/** combined power figure used for sorting */
+export const powerTotal = (b: Blueprint) => b.power ? b.power.use + b.power.gen : 0;

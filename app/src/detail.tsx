@@ -3,7 +3,7 @@ import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
 import { SOURCES, STATUS, type Blueprint } from './data';
 import { Btn, IconBtn, MetaStat, ModdedBadge, SourceBadge, SourceMark, StatusPill, Tag, Thumb } from './components';
 import {
-  IcArrowLeft, IcCalendar, IcCheck, IcChevron, IcCopy, IcDimensions, IcDownload, IcExternal, IcFile, IcInfo,
+  IcArrowLeft, IcCalendar, IcFolder, IcCheck, IcChevron, IcCopy, IcDimensions, IcDownload, IcExternal, IcFile, IcInfo,
   IcLayers, IcLink, IcMachine, IcMaterial, IcPower, IcRefresh, IcStar, IcTag, IcUpload, IcUser, IcWarn, type Icon,
 } from './icons';
 import { copyText, openExternal } from './platform';
@@ -13,8 +13,8 @@ const overlayChip = {
   backdropFilter: 'blur(6px)', border: '1px solid var(--border)', color: 'var(--text-dim)',
 } as const;
 
-function DetailHeader({ bp, onBack, fav, onToggleFav, onExport }: {
-  bp: Blueprint; onBack: () => void; fav: boolean; onToggleFav: () => void; onExport: () => void;
+function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder }: {
+  bp: Blueprint; onBack: () => void; fav: boolean; onToggleFav: () => void; onExport: () => void; onOpenFolder: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -29,13 +29,15 @@ function DetailHeader({ bp, onBack, fav, onToggleFav, onExport }: {
         fontSize: 12.5, fontWeight: 500, fontFamily: 'var(--font-display)' }}>
         <IcArrowLeft size={16} />Library</button>
       <div className="mono" style={{ fontSize: 11, color: 'var(--text-mute)', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-        <span>{bp.category}</span><IcChevron size={12} /><span style={{ color: 'var(--text-dim)' }}>{bp.id.toUpperCase()}</span>
+        <span>{bp.category}</span><IcChevron size={12} /><span style={{ color: 'var(--text-dim)' }}>{bp.onDisk ? `${bp.name}.sbp` : bp.id.toUpperCase()}</span>
       </div>
       <div style={{ flex: 1 }} />
       <IconBtn icon={IcStar} active={fav} title={fav ? 'Remove from favorites' : 'Add to favorites'} onClick={onToggleFav} />
       <Btn variant="ghost" icon={copied ? IcCheck : IcCopy} onClick={copy} disabled={!bp.url}
         title={bp.url ? 'Copy source link' : 'No source link for local imports'}>{copied ? 'Copied' : 'Copy link'}</Btn>
-      <Btn variant="primary" icon={IcDownload} onClick={onExport}>Export to game folder</Btn>
+      {bp.onDisk
+        ? <Btn variant="primary" icon={IcFolder} onClick={onOpenFolder}>Open folder</Btn>
+        : <Btn variant="primary" icon={IcDownload} onClick={onExport}>Export to game folder</Btn>}
     </div>
   );
 }
@@ -75,8 +77,9 @@ function HeroShot({ bp, active, shots, image, onDropImage }: {
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
-  bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; fav: boolean; onToggleFav: () => void;
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, fav, onToggleFav }: {
+  bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
+  fav: boolean; onToggleFav: () => void;
 }) {
   const [active, setActive] = useState(0);
   const [images, setImages] = useState<Record<number, string>>({});
@@ -89,7 +92,8 @@ export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <DetailHeader bp={bp} onBack={onBack} fav={fav} onToggleFav={onToggleFav} onExport={() => onExport(bp)} />
+      <DetailHeader bp={bp} onBack={onBack} fav={fav} onToggleFav={onToggleFav} onExport={() => onExport(bp)}
+        onOpenFolder={() => onOpenFolder(bp)} />
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 350px', alignItems: 'start' }}>
           {/* ---- MAIN ---- */}
@@ -98,14 +102,15 @@ export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                 <SourceBadge src={bp.source} full />
                 {bp.modded && <ModdedBadge large />}
-                <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-mute)' }}>v{bp.gameVersion}</span>
+                {bp.gameVersion && <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-mute)' }}>v{bp.gameVersion}</span>}
               </div>
               <h1 style={{ margin: 0, fontSize: 27, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.1,
                 textWrap: 'balance' }}>{bp.name}</h1>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10, color: 'var(--text-dim)', flexWrap: 'wrap' }}>
-                <MetaInline icon={IcUser}>{bp.author}</MetaInline>
+                {bp.author && <MetaInline icon={IcUser}>{bp.author}</MetaInline>}
+                {bp.session && <MetaInline icon={IcFolder}>{bp.session}</MetaInline>}
                 <MetaInline icon={IcCalendar}>{bp.added}</MetaInline>
-                <MetaInline icon={IcDownload}>{bp.downloads.toLocaleString()}</MetaInline>
+                {bp.downloads != null && <MetaInline icon={IcDownload}>{bp.downloads.toLocaleString()}</MetaInline>}
               </div>
             </div>
 
@@ -134,7 +139,7 @@ export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
                 {bp.notes}</p>
             </Block>
 
-            <Block title="Primary outputs & materials" icon={IcMaterial}>
+            {bp.materials.length > 0 && <Block title="Primary outputs & materials" icon={IcMaterial}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {bp.materials.map(m => (
                   <span key={m} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 34, padding: '0 13px 0 10px',
@@ -144,13 +149,13 @@ export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
                     <span style={{ fontSize: 13, fontWeight: 500 }}>{m}</span></span>
                 ))}
               </div>
-            </Block>
+            </Block>}
 
-            <Block title="Tags" icon={IcTag}>
+            {bp.tags.length > 0 && <Block title="Tags" icon={IcTag}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {bp.tags.map(t => <Tag key={t}>{t}</Tag>)}
               </div>
-            </Block>
+            </Block>}
           </div>
 
           {/* ---- RIGHT RAIL ---- */}
@@ -169,26 +174,29 @@ export function BlueprintDetail({ bp, onBack, onExport, fav, onToggleFav }: {
               {bp.status === 'update' && <div style={{ display: 'flex', gap: 8, marginBottom: 12, fontSize: 12,
                 color: 'var(--info)', lineHeight: 1.5 }}><IcRefresh size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>A newer revision is available from {src.label}.</span></div>}
-              <Btn variant="primary" full icon={IcDownload} onClick={() => onExport(bp)}>
-                {bp.status === 'installed' ? 'Re-export to folder' : bp.status === 'update' ? 'Update in folder' : 'Export to game folder'}</Btn>
+              {bp.onDisk
+                ? <Btn variant="primary" full icon={IcFolder} onClick={() => onOpenFolder(bp)}>Open in {bp.session}</Btn>
+                : <Btn variant="primary" full icon={IcDownload} onClick={() => onExport(bp)}>
+                    {bp.status === 'installed' ? 'Re-export to folder' : bp.status === 'update' ? 'Update in folder' : 'Export to game folder'}</Btn>}
             </div>
 
-            <div>
+            {(bp.dims || bp.power || bp.machines != null) && <div>
               <div className="tlabel" style={{ marginBottom: 11 }}>Specifications</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
-                <MetaStat icon={IcDimensions} label="Footprint" value={`${bp.dims.x}×${bp.dims.y}`} />
-                <MetaStat icon={IcLayers} label="Height" value={`${bp.dims.z}m`} />
-                <MetaStat icon={IcMachine} label="Machines" value={bp.machines} />
-                <MetaStat icon={IcPower} label={bp.power.gen ? 'Output' : 'Draw'}
-                  value={`${bp.power.gen || bp.power.use} MW`} accent={!bp.power.gen} />
+                {bp.dims && <MetaStat icon={IcDimensions} label="Footprint" value={`${bp.dims.x}×${bp.dims.y}`} />}
+                {bp.dims && <MetaStat icon={IcLayers} label="Height" value={`${bp.dims.z}m`} />}
+                {bp.machines != null && <MetaStat icon={IcMachine} label="Machines" value={bp.machines} />}
+                {bp.power && <MetaStat icon={IcPower} label={bp.power.gen ? 'Output' : 'Draw'}
+                  value={`${bp.power.gen || bp.power.use} MW`} accent={!bp.power.gen} />}
               </div>
-            </div>
+            </div>}
 
             <div>
               <div className="tlabel" style={{ marginBottom: 11 }}>Files</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <FileRow ext="sbp" ok={bp.files.sbp} size={bp.sizeKB} desc="Blueprint geometry" />
-                <FileRow ext="sbpcfg" ok={bp.files.sbpcfg} size={Math.round(bp.sizeKB * 0.06)} desc="Config & metadata" />
+                <FileRow file={`${bp.onDisk ? bp.name : 'blueprint'}.sbp`} ok={bp.files.sbp} size={bp.sizeKB} desc="Blueprint geometry" />
+                <FileRow file={`${bp.onDisk ? bp.name : 'blueprint'}.sbpcfg`} ok={bp.files.sbpcfg}
+                  size={bp.onDisk ? undefined : Math.round(bp.sizeKB * 0.06)} desc="Icon & description (optional)" />
               </div>
             </div>
 
@@ -236,7 +244,7 @@ function Block({ title, icon: Ic, children }: { title: string; icon: Icon; child
   );
 }
 
-function FileRow({ ext, ok, size, desc }: { ext: string; ok: boolean; size: number; desc: string }) {
+function FileRow({ file, ok, size, desc }: { file: string; ok: boolean; size?: number; desc: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 'var(--r)',
       background: 'var(--panel-2)', border: `1px solid ${ok ? 'var(--border)' : 'var(--border-soft)'}`, opacity: ok ? 1 : .6 }}>
@@ -246,11 +254,11 @@ function FileRow({ ext, ok, size, desc }: { ext: string; ok: boolean; size: numb
         <IcFile size={16} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: ok ? 'var(--text)' : 'var(--text-mute)' }}>
-          blueprint.{ext}</div>
+          {file}</div>
         <div style={{ fontSize: 11, color: 'var(--text-mute)' }}>{desc}</div>
       </div>
       {ok
-        ? <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>{size} KB</span>
+        ? <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>{size != null ? `${size} KB` : '✓'}</span>
         : <span className="mono" style={{ fontSize: 10, color: 'var(--warn)' }}>MISSING</span>}
     </div>
   );

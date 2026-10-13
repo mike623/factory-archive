@@ -160,8 +160,21 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function FilterRail({ filters, setFilters, counts }: {
+export interface SessionFilter {
+  /** world sessions to choose from, with how many blueprints each holds */
+  options: { name: string; count: number }[];
+  /** the host's current world (latest autosave, or the one picked for imports) */
+  current: string | null;
+  /** selected session; null = all sessions */
+  value: string | null;
+  onChange: (v: string | null) => void;
+}
+
+export function FilterRail({ filters, setFilters, counts, session, onReset, metadata }: {
   filters: Filters; setFilters: Dispatch<SetStateAction<Filters>>; counts: { shown: number; total: number };
+  session: SessionFilter; onReset: () => void;
+  /** false when every blueprint comes from disk: hide filters for site-only metadata */
+  metadata: boolean;
 }) {
   const toggleTag = (t: string) => setFilters(f => ({ ...f, tags: f.tags.includes(t) ? f.tags.filter(x => x !== t) : [...f.tags, t] }));
   const setCat = (c: string) => setFilters(f => ({ ...f, category: f.category === c ? null : c }));
@@ -177,7 +190,28 @@ export function FilterRail({ filters, setFilters, counts }: {
           {counts.shown}/{counts.total}</span>
       </div>
 
-      <Section label="Category">
+      {session.options.length > 0 && <Section label="World session">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {[{ name: null as string | null, count: session.options.reduce((n, o) => n + o.count, 0) }, ...session.options].map(o => {
+            const on = session.value === o.name;
+            return (
+              <button key={o.name ?? '__all__'} onClick={() => session.onChange(o.name)} aria-pressed={on}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px', borderRadius: 'var(--r-sm)',
+                background: on ? 'var(--accent-ghost)' : 'transparent',
+                border: `1px solid ${on ? 'var(--accent-line)' : 'transparent'}`,
+                color: on ? 'var(--accent-bright)' : 'var(--text-dim)', fontSize: 12.5, fontWeight: 500, transition: 'all .14s' }}>
+                <span style={{ flex: 1, minWidth: 0, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {o.name ?? 'All sessions'}</span>
+                {o.name && o.name === session.current && <span className="mono" style={{ fontSize: 8.5, fontWeight: 600, letterSpacing: '.06em',
+                  padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--accent-line)' }}>CURRENT</span>}
+                <span className="mono" style={{ fontSize: 10, opacity: .6 }}>{o.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Section>}
+
+      {metadata && <Section label="Category">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {CATEGORIES.map(c => {
             const on = filters.category === c;
@@ -193,23 +227,23 @@ export function FilterRail({ filters, setFilters, counts }: {
             );
           })}
         </div>
-      </Section>
+      </Section>}
 
-      <Section label="Tags">
+      {metadata && <Section label="Tags">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {ALL_TAGS.map(t => <Tag key={t} active={filters.tags.includes(t)} onClick={() => toggleTag(t)}>{t}</Tag>)}
         </div>
-      </Section>
+      </Section>}
 
-      <Section label="Compatibility">
+      <Section label={metadata ? 'Compatibility' : 'Files'}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <ToggleRow label="Modded only" icon={IcWrench} on={filters.modded} onClick={() => flip('modded')} />
+          {metadata && <ToggleRow label="Modded only" icon={IcWrench} on={filters.modded} onClick={() => flip('modded')} />}
           <ToggleRow label="Has .sbpcfg pair" icon={IcFile} on={filters.paired} onClick={() => flip('paired')} />
-          <ToggleRow label="Installed in game" icon={IcCheck} on={filters.installed} onClick={() => flip('installed')} />
+          {metadata && <ToggleRow label="Installed in game" icon={IcCheck} on={filters.installed} onClick={() => flip('installed')} />}
         </div>
       </Section>
 
-      <Section label="Game version">
+      {metadata && <Section label="Game version">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {GAME_VERSIONS.map(v => {
             const on = filters.version === v;
@@ -223,10 +257,10 @@ export function FilterRail({ filters, setFilters, counts }: {
             );
           })}
         </div>
-      </Section>
+      </Section>}
 
       <div style={{ padding: 14, marginTop: 'auto' }}>
-        <Btn variant="ghost" size="sm" full icon={IcRefresh} onClick={() => setFilters(EMPTY_FILTERS)}>
+        <Btn variant="ghost" size="sm" full icon={IcRefresh} onClick={onReset}>
           Reset filters
         </Btn>
       </div>

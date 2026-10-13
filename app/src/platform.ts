@@ -77,7 +77,7 @@ export interface SessionsInfo {
   sessions: string[];
 }
 export async function listSessions(root: string): Promise<SessionsInfo> {
-  if (!isTauri()) return { detected: { name: 'Preview World', source: 'autosave' }, pinned: null, sessions: ['Preview World'] };
+  if (!isTauri()) return { detected: { name: 'Preview World', source: 'autosave' }, pinned: null, sessions: ['Preview World', 'Old World'] };
   return invoke<SessionsInfo>('sessions', { root });
 }
 /** Pin friends' imports to one session; null follows the detected current world. */
