@@ -85,7 +85,7 @@ Paste a link in **Import**, or friends paste one on the share page. The app down
 - If no file is found (for example because the site needs a login or builds its links with JavaScript), it says so and writes nothing. Download the files in your browser and drop them on the app instead.
 - Downloads are capped at 25 MB. Links to this computer or the local network are refused, so friends on the share page can't make the host's app fetch internal addresses.
 
-Tested offline against a local stand-in site (`cargo test`). It hasn't been tested against the real SCIM or Satisfactory Blueprints pages, because those sites weren't reachable from the build environment. Try it with a real link, e.g. `https://satisfactory-calculator.com/en/blueprints/index/details/id/10327/name/SFS+Foundry+x3`.
+Tested offline against a local stand-in site (`cargo test`), and confirmed working on a real SCIM page (`…/details/id/10327/name/SFS+Foundry+x3`). SCIM sends URL-encoded file names, which are decoded. Satisfactory Blueprints links haven't been tried yet.
 
 ## Open the blueprint folder
 

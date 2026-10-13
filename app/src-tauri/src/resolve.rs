@@ -90,10 +90,18 @@ pub fn disposition_filename(v: &str) -> Option<String> {
     }
     for part in v.split(';').map(str::trim) {
         if let Some(rest) = part.strip_prefix("filename=") {
-            return Some(rest.trim_matches('"').to_string());
+            // some sites put a URL-encoded name in plain `filename=` (e.g. SFS%20Foundry%20x3.sbp)
+            return Some(decode_if_escaped(rest.trim_matches('"')));
         }
     }
     None
+}
+
+/// Decode `%XX` escapes only when the text actually contains some.
+fn decode_if_escaped(s: &str) -> String {
+    let b = s.as_bytes();
+    let escaped = b.windows(3).any(|w| w[0] == b'%' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit());
+    if escaped { percent_decode(s) } else { s.to_string() }
 }
 
 fn percent_decode(s: &str) -> String {
@@ -295,6 +303,10 @@ mod tests {
     fn parses_filenames_and_links() {
         assert_eq!(disposition_filename(r#"attachment; filename="SFS Foundry x3.sbp""#).as_deref(), Some("SFS Foundry x3.sbp"));
         assert_eq!(disposition_filename("attachment; filename*=UTF-8''SFS%20Foundry%20x3.sbpcfg").as_deref(), Some("SFS Foundry x3.sbpcfg"));
+        // URL-encoded name inside plain filename= (what SCIM sent for SFS Foundry x3)
+        assert_eq!(disposition_filename(r#"attachment; filename="SFS%20Foundry%20x3.sbp""#).as_deref(), Some("SFS Foundry x3.sbp"));
+        assert_eq!(disposition_filename("attachment; filename=Steel+360%25.sbp").as_deref(), Some("Steel+360%.sbp"));
+        assert_eq!(disposition_filename(r#"attachment; filename="100% Iron.sbp""#).as_deref(), Some("100% Iron.sbp"));
         let base = Url::parse("https://example.com/bp/details/id/1").unwrap();
         let links = extract_links(r#"<a href="/dl?id=1&amp;f=sbp">x</a> <a href='files/a.sbp'>y</a> <a href=#top>z</a> <link href="/s.css">"#, &base);
         let s: Vec<String> = links.iter().map(|u| u.to_string()).collect();
@@ -328,7 +340,7 @@ mod tests {
                 let resp = match req.url() {
                     "/details/1" => html(r#"<html><a href="/login">Log in</a> <link href="/a.css">
                         <a href="/download/1/sbp">Download SBP</a> <a href="/download/1/cfg">Download SBP config</a></html>"#),
-                    "/download/1/sbp" => file(b"SBP-BYTES", "SFS Foundry x3.sbp"),
+                    "/download/1/sbp" => file(b"SBP-BYTES", "SFS%20Foundry%20x3.sbp"),
                     "/download/1/cfg" => file(b"CFG-BYTES", "SFS Foundry x3.sbpcfg"),
                     "/details/2" => html("<html>Please log in to download.</html>"),
                     "/files/Bus.sbp" => file(b"BUS", "Bus.sbp"),
