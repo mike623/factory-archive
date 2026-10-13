@@ -1,25 +1,175 @@
-# CODING AGENTS: READ THIS FIRST
+# Factory Archive
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+**A desktop blueprint manager for [Satisfactory](https://www.satisfactorygame.com/).** Collect, import, organize and share your `.sbp` blueprints across worlds and with friends.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+[![Release](https://img.shields.io/github/v/release/mike623/factory-archive?label=download)](https://github.com/mike623/factory-archive/releases/latest)
+[![Desktop build](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml/badge.svg)](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20(CrossOver)-555)
 
-## What you should do — IMPORTANT
+![Factory Archive library](docs/screenshots/library.png)
 
-**Read the chat transcripts first.** There are 2 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+## Features
 
-**Read `project/Factory Archive.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+- **Your real blueprint library.** It reads the `.sbp`/`.sbpcfg` files in your game folder and groups them by **world session**. It opens on the world you're currently playing, detected from your latest autosave.
+- **Import from a link.** Paste a [SCIM](https://satisfactory-calculator.com/en/blueprints) page, a [Satisfactory Blueprints](https://satisfactoryblueprints.com/) page or a direct `.sbp` URL, and the blueprint is downloaded straight into your world. The page's **picture, title, description, author, tags and source link** are saved alongside it.
+- **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
+- **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
+- **Share on LAN** for multiplayer. Friends on your network open a web page from your app to browse and download your blueprints, or to paste a link that goes straight into the world you're hosting.
+- **Works on Windows and on macOS with CrossOver.** On a Mac it finds Satisfactory inside your CrossOver bottles.
+- **Updates itself.** Signed releases come from GitHub, with an **Install & restart** banner and a **Check for updates** button.
+- Search (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>), filters, favorites, grid and list views, and light and dark themes.
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+| Blueprint details | Import from a link |
+| --- | --- |
+| ![Detail page](docs/screenshots/detail.png) | ![Import dialog](docs/screenshots/import.png) |
 
-## About the design files
+## Download
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+Get the latest installer from **[Releases](https://github.com/mike623/factory-archive/releases/latest)**:
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+| Platform | File |
+| --- | --- |
+| Windows 10/11 | `Factory.Archive_<version>_x64-setup.exe` (or the `.msi`) |
+| macOS 11+ (Apple Silicon & Intel) | `Factory.Archive_<version>_universal.dmg` |
 
-## Bundle contents
+Installed copies update themselves after that.
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `Satisfactory blueprints mang2` project files (HTML prototypes, assets, components)
+**First launch:** the builds aren't code-signed yet.
+- **Windows:** if SmartScreen warns, click **More info → Run anyway**.
+- **macOS:** right-click the app → **Open** → **Open**, or run:
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Factory Archive.app"
+  ```
+
+## Using it
+
+### Where your blueprints live
+
+Satisfactory keeps blueprints **per world (save session)**, in one folder per session:
+
+| Platform | Blueprints folder |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\blueprints\<session>\` |
+| macOS + CrossOver | `~/Library/Application Support/CrossOver/Bottles/<bottle>/drive_c/users/<user>/AppData/Local/FactoryGame/Saved/SaveGames/blueprints/<session>/` |
+
+The app finds this folder automatically. If it can't, click the folder card in the sidebar and choose it yourself. The folder button next to it opens the current world's folder in Explorer or Finder.
+
+> **After adding blueprints, reload the save.** Go to the main menu and load the world again; no restart is needed. For a dedicated server, stop the server before copying files in, then start it again.
+
+Good to know:
+- A session folder's name must match the session name exactly. A [known bug](https://wiki.indifferentbroccoli.com/Satisfactory/InvisibleBlueprintFix) can hide blueprints when the session name contains spaces or special characters.
+- The `.sbp` is the blueprint itself. The `.sbpcfg` only holds its icon and description and is optional.
+
+### Importing from a link
+
+**Import → paste a link → Download & add.** It works with:
+- **Direct `.sbp` / `.sbpcfg` links.** The matching sibling file is fetched too.
+- **Blueprint pages** (SCIM, Satisfactory Blueprints…). The app follows links on the page that really download a `.sbp`/`.sbpcfg`.
+
+It doesn't depend on any site's page layout, and it never saves an HTML page as a blueprint. If no download is found (for example because the site needs a login), it says so and writes nothing. In that case, download the files in your browser and drop them on the app.
+
+Along with the files, the app saves the page's **picture, title, description, author, category, tags and link**, read from the page's standard link-preview tags. These are stored in the app's data folder, never in the game folder:
+- Windows: `%APPDATA%\com.factoryarchive.app\blueprint-meta\`
+- macOS: `~/Library/Application Support/com.factoryarchive.app/blueprint-meta/`
+
+They're keyed by a hash of the blueprint's contents, so they follow it when you copy or rename it.
+
+### Multiplayer: Share on LAN
+
+Blueprints belong to the world, so in multiplayer they live on the **host's** machine. Players who join a world see the host's blueprints, not their own.
+
+1. The host turns on **Share on LAN** in the sidebar and sends friends the link, e.g. `http://192.168.1.20:7777`. Allow the firewall prompt on **private** networks.
+2. Friends open it in any browser to **browse and download** the host's blueprints, or to **paste a link**, which goes straight into the host's current world.
+3. The host gets a notification and reloads the save.
+
+Imports go into the world that's currently being played, detected from the newest `<session>_autosave_<n>.sav`. The host can pick another one under **Imports go to**.
+
+There's no PIN, so only turn sharing on at home or over a trusted VPN such as Tailscale or ZeroTier. Other safeguards:
+- The server only runs while sharing is on.
+- It only serves blueprint files, and it rejects path tricks, DNS rebinding and cross-site posts.
+- It refuses links that point at your own network.
+
+## Development
+
+Factory Archive is a [Tauri 2](https://v2.tauri.app/) app: a **Rust** backend with a **React 19 + TypeScript + Vite** frontend.
+
+### Prerequisites
+
+- [Node.js 22+](https://nodejs.org/) and [Rust](https://rustup.rs/) (stable)
+- **Windows:** Visual Studio Build Tools with *Desktop development with C++*
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`)
+- **Linux** (for development and tests): `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`
+
+### Run
+
+```bash
+cd app
+npm install
+npm run tauri dev     # desktop app with hot reload
+npm run dev           # UI only, in the browser at http://localhost:1420 (sample data)
+```
+
+Browser-preview helpers: `?empty` shows the first-run screen, and `?disk` previews blueprints as if they came from disk.
+
+### Test and check
+
+```bash
+cd app/src-tauri && cargo test     # file handling, link import (against a local stand-in site), share server, metadata
+cd app && npx tsc --noEmit         # TypeScript
+cd app && npx vite build           # frontend build
+```
+
+### Project layout
+
+```
+app/
+  src/                    React UI
+    App.tsx               state, routing, filters, file operations
+    library.tsx           sidebar + filter rail
+    cards.tsx             top bar, grid cards, list rows
+    detail.tsx            blueprint detail page
+    modals.tsx            import dialog, export drawer
+    copyDrawer.tsx        copy to another world
+    diskLibrary.ts        reads the real library from the Rust side
+    platform.ts           Tauri bridge with browser fallbacks
+    styles.css            design tokens (dark default, light overrides)
+  src-tauri/
+    src/lib.rs            Tauri commands and app setup
+    src/blueprints.rs     reading, writing, importing and copying blueprint files; session detection
+    src/resolve.rs        link import: download, page links, link-preview tags, safety checks
+    src/meta.rs           details and picture store, keyed by .sbp hash
+    src/share.rs          Share on LAN web server
+    src/share.html        the page friends see
+    tauri.conf.json       app config and updater public key
+design/                   the original Claude Design prototype and chats
+.github/workflows/        CI build and release
+```
+
+### Releasing
+
+Bump `version` in `app/src-tauri/tauri.conf.json` (and `app/package.json`) and push to `main`. The **Release** workflow then builds Windows and macOS, signs the update packages, and publishes a GitHub Release with `latest.json`. Versions that already have a release are skipped. You can also push a `v*` tag or run **Release** manually from the Actions tab.
+
+Signing uses the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The matching public key is `plugins.updater.pubkey` in `tauri.conf.json`. Use a password of letters and digits only, since symbols get altered on the Windows runner.
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+- Please run `cargo test` and `npx tsc --noEmit` before opening a PR.
+- Keep the app honest: never write placeholder or guessed data into the game folder.
+- Coding agents should read [`AGENTS.md`](AGENTS.md).
+
+## Roadmap
+
+- **Blueprint breakdown:** material cost and buildings, read from the `.sbp` file itself.
+- Code-signed Windows and macOS builds.
+- Live refresh in-game without reloading the save. This probably needs a game mod.
+
+## License
+
+[MIT](LICENSE)
+
+## Disclaimer
+
+Factory Archive is a fan-made tool. It is not affiliated with or endorsed by Coffee Stain Studios, [Satisfactory Calculator (SCIM)](https://satisfactory-calculator.com/) or [Satisfactory Blueprints](https://satisfactoryblueprints.com/). Satisfactory is a trademark of Coffee Stain Studios. Blueprints you download belong to their authors, so respect each site's terms.

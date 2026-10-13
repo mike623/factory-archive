@@ -1,7 +1,9 @@
 [package]
 name = "factory-archive"
 version = "0.1.0"
-description = "Factory Archive — Satisfactory Blueprint Manager"
+description = "Factory Archive — desktop blueprint manager for Satisfactory"
+license = "MIT"
+repository = "https://github.com/mike623/factory-archive"
 edition = "2021"
 
 [lib]
