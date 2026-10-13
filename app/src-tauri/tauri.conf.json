@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyQjVEODEyNjVBMzA5RDEKUldUUkNhTmxFdGkxOHNkbFQrOGdmOG9vQ2lxYWdUODJHU3dZci9YRU5oQ3A5ajlQMTZ2TVJDMEUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzMzc1QUI1REY4REFGMTEKUldRUnI0M2Z0Vm8zcy92S1gxb0hnc21ia2JuT1VQY3lRVEU2bWsvYjR0KzJEclZ3bmpiQXgrbnkK",
       "endpoints": [
         "https://github.com/mike623/factory-archive/releases/latest/download/latest.json"
       ],
