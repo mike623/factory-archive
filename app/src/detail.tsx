@@ -4,7 +4,7 @@ import { SOURCES, STATUS, type Blueprint } from './data';
 import { Btn, IconBtn, MetaStat, ModdedBadge, SourceBadge, SourceMark, StatusPill, Tag, Thumb } from './components';
 import {
   IcArrowLeft, IcCalendar, IcFolder, IcCheck, IcChevron, IcCopy, IcDimensions, IcDownload, IcExternal, IcFile, IcInfo,
-  IcLayers, IcLink, IcMachine, IcMaterial, IcPencil, IcPower, IcRefresh, IcStar, IcTag, IcUpload, IcUser, IcWarn, type Icon,
+  IcLayers, IcLink, IcMachine, IcMaterial, IcPencil, IcPower, IcRefresh, IcStar, IcTag, IcTrash, IcUpload, IcUser, IcWarn, type Icon,
 } from './icons';
 import { copyText, openExternal } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
@@ -16,8 +16,9 @@ const overlayChip = {
   backdropFilter: 'blur(6px)', border: '1px solid var(--border)', color: 'var(--text-dim)',
 } as const;
 
-function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder }: {
+function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder, onDelete }: {
   bp: Blueprint; onBack: () => void; fav: boolean; onToggleFav: () => void; onExport: () => void; onOpenFolder: () => void;
+  onDelete?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -35,6 +36,7 @@ function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder }: 
         <span>{bp.onDisk ? bp.session : bp.category}</span><IcChevron size={12} /><span style={{ color: 'var(--text-dim)' }}>{bp.onDisk ? `${bp.name}.sbp` : bp.id.toUpperCase()}</span>
       </div>
       <div style={{ flex: 1 }} />
+      {onDelete && <IconBtn icon={IcTrash} title="Delete (moves the files to the Trash)" onClick={onDelete} />}
       <IconBtn icon={IcStar} active={fav} title={fav ? 'Remove from favorites' : 'Add to favorites'} onClick={onToggleFav} />
       <Btn variant="ghost" icon={copied ? IcCheck : IcCopy} onClick={copy} disabled={!bp.url}
         title={bp.url ? 'Copy source link' : 'No source link for local imports'}>{copied ? 'Copied' : 'Copy link'}</Btn>
@@ -188,9 +190,10 @@ function CategoryCard({ bp, categories, onSave }: {
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, onSetCategory, categories = [], fav, onToggleFav, root = null }: {
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, onDelete, onSetCategory, categories = [], fav, onToggleFav, root = null }: {
   bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
   onRename?: (b: Blueprint, name: string) => Promise<void>;
+  onDelete?: (b: Blueprint) => void;
   onSetCategory?: (b: Blueprint, category: string, subcategory: string) => Promise<void>;
   /** every category in the library, for suggestions */
   categories?: CategoryNode[];
@@ -213,7 +216,7 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <DetailHeader bp={bp} onBack={onBack} fav={fav} onToggleFav={onToggleFav} onExport={() => onExport(bp)}
-        onOpenFolder={() => onOpenFolder(bp)} />
+        onOpenFolder={() => onOpenFolder(bp)} onDelete={onDelete && (() => onDelete(bp))} />
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 350px', alignItems: 'start' }}>
           {/* ---- MAIN ---- */}

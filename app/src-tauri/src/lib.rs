@@ -222,6 +222,13 @@ fn rename_blueprint(root: String, session: String, from: String, to: String) -> 
     blueprints::rename(&PathBuf::from(root), &session, &from, &to).map_err(|e| e.to_string())
 }
 
+/// Move a blueprint's .sbp and .sbpcfg to the system Trash / Recycle Bin, so it can be restored.
+#[tauri::command]
+fn delete_blueprint(root: String, session: String, name: String) -> Result<(), String> {
+    let files = blueprints::files_of(&PathBuf::from(root), &session, &name).map_err(|e| e.to_string())?;
+    trash::delete_all(&files).map_err(|e| format!("couldn't move it to the Trash: {e}"))
+}
+
 /// Set a blueprint's category and sub-category (stored in the app data folder, not the game's).
 #[tauri::command]
 fn set_category(store: tauri::State<'_, MetaStore>, root: String, session: String, name: String, category: String, subcategory: String) -> Result<(), String> {
@@ -303,7 +310,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

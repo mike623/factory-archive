@@ -123,6 +123,18 @@ export async function renameBlueprint(root: string, session: string, from: strin
   await invoke('rename_blueprint', { root, session, from, to });
 }
 
+/** Move a blueprint's .sbp (and .sbpcfg) to the system Trash / Recycle Bin. */
+export async function deleteBlueprint(root: string, session: string, name: string): Promise<void> {
+  await invoke('delete_blueprint', { root, session, name });
+}
+
+/** Yes/no question: a native dialog in the desktop app, `confirm()` in the browser preview. */
+export async function confirmAction(message: string, title: string, okLabel: string): Promise<boolean> {
+  if (!isTauri()) return confirm(message);
+  const { ask } = await import('@tauri-apps/plugin-dialog');
+  return ask(message, { title, kind: 'warning', okLabel, cancelLabel: 'Cancel' });
+}
+
 /** Set a blueprint's category and sub-category (kept in the app's data folder). Empty text clears. */
 export async function setBlueprintCategory(root: string, session: string, name: string, category: string, subcategory: string): Promise<void> {
   await invoke('set_category', { root, session, name, category, subcategory });

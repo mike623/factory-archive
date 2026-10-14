@@ -16,7 +16,7 @@ import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint, setBlueprintCategory,
+  confirmAction, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint, setBlueprintCategory,
   type Outcome,
 } from './platform';
 import { useShare } from './share';
@@ -225,6 +225,26 @@ export default function App() {
     setDetailId(d => d === b.id ? newId : d);
   };
 
+  const deleteBp = async (b: Blueprint) => {
+    const what = b.onDisk ? `"${b.name}" from ${b.session}` : `"${b.name}"`;
+    if (!await confirmAction(`Delete ${what}? Its files go to the Trash, so you can restore them from there.`, 'Delete blueprint', 'Delete')) return;
+    try {
+      if (b.onDisk && isTauri()) {
+        const root = gameFolder.current?.path;
+        if (!root || !b.session) throw new Error('Satisfactory folder not found');
+        await deleteBlueprint(root, b.session, b.name);
+        await disk.reload();
+      } else {
+        setLibrary(l => l.filter(x => x.id !== b.id)); // browser preview
+      }
+      const drop = (ids: string[]) => ids.filter(x => x !== b.id);
+      setFavList(drop); setImported(drop);
+      setSel(s => { const n = new Set(s); n.delete(b.id); return n; });
+      setDetailId(d => d === b.id ? null : d);
+      notices.push({ tone: 'ok', title: `Deleted ${b.name}`, detail: b.onDisk ? 'Its files are in the Trash if you need them back.' : undefined });
+    } catch (e) { notices.push({ tone: 'warn', title: `Couldn't delete ${b.name}`, detail: String(e) }); }
+  };
+
   const setCategory = async (b: Blueprint, category: string, subcategory: string) => {
     if (b.onDisk && isTauri()) {
       const root = gameFolder.current?.path;
@@ -286,7 +306,7 @@ export default function App() {
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
-              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp}
+              onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp} onDelete={deleteBp}
               onSetCategory={setCategory} categories={allCategories}
               root={gameFolder.current?.path ?? null} />
           </main>

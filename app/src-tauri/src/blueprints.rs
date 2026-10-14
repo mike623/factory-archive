@@ -281,6 +281,13 @@ pub fn rename(root: &Path, session: &str, from: &str, to: &str) -> Result<(), Bp
     Ok(())
 }
 
+/// The files to remove for a blueprint: its .sbp and, if present, its .sbpcfg.
+pub fn files_of(root: &Path, session: &str, name: &str) -> Result<Vec<PathBuf>, BpError> {
+    let (sbp, cfg) = (file_path(root, session, name, "sbp")?, file_path(root, session, name, "sbpcfg")?);
+    if !sbp.is_file() { return Err(BpError::NotFound); }
+    Ok([sbp, cfg].into_iter().filter(|p| p.is_file()).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +409,20 @@ mod tests {
         assert!(root.join("New World/First.sbp").is_file());
         assert_eq!(read_file(&root, "World", "../../etc", "sbp"), Err(BpError::BadName));
         assert_eq!(read_file(&root, "World", "Steel", "exe"), Err(BpError::BadName));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn lists_files_to_delete() {
+        let root = tmp("delete");
+        fs::create_dir_all(root.join("World")).unwrap();
+        write_blueprint(&root, "World", "Pair", b"S", Some(b"C"), false).unwrap();
+        write_blueprint(&root, "World", "Solo", b"S", None, false).unwrap();
+        assert_eq!(files_of(&root, "World", "Pair").unwrap().len(), 2);
+        assert_eq!(files_of(&root, "World", "Solo").unwrap(), [root.join("World").join("Solo.sbp")]);
+        assert!(matches!(files_of(&root, "World", "Missing"), Err(BpError::NotFound)));
+        assert!(matches!(files_of(&root, "World", "../x"), Err(BpError::BadName)));
+        assert!(matches!(files_of(&root, "..", "Pair"), Err(BpError::BadName)));
         fs::remove_dir_all(&root).ok();
     }
 
