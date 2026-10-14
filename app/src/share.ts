@@ -5,6 +5,14 @@ import {
   type SessionsInfo, type ShareInfo, type SharedImport,
 } from './platform';
 
+const OFF_KEY = 'fa.share.off';
+function isOff() {
+  try { return !!localStorage.getItem(OFF_KEY); } catch { return false; }
+}
+function rememberOff(off: boolean) {
+  try { if (off) localStorage.setItem(OFF_KEY, '1'); else localStorage.removeItem(OFF_KEY); } catch { /* ignore */ }
+}
+
 export function useShare(root: string | null) {
   const [info, setInfo] = useState<ShareInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -22,7 +30,14 @@ export function useShare(root: string | null) {
     try { await shareSetSession(name); refreshSessions(); } catch (e) { setError(String(e)); }
   }, [refreshSessions]);
 
-  useEffect(() => { shareStatus().then(setInfo).catch(() => {}); }, []);
+  // sharing is on by default; turning it off is remembered on this machine
+  const [checked, setChecked] = useState(false);
+  useEffect(() => { shareStatus().then(setInfo).catch(() => {}).finally(() => setChecked(true)); }, []);
+  useEffect(() => {
+    if (!checked || info || !root || !canShare() || isOff()) return;
+    setChecked(false); // start once
+    shareStart(root).then(setInfo).catch(e => setError(String(e)));
+  }, [checked, info, root]);
 
   useEffect(() => {
     let off: (() => void) | undefined, dead = false;
@@ -39,8 +54,8 @@ export function useShare(root: string | null) {
   const toggle = useCallback(async () => {
     setBusy(true); setError(null);
     try {
-      if (info) { await shareStop(); setInfo(null); }
-      else if (root) { setInfo(await shareStart(root)); refreshSessions(); }
+      if (info) { await shareStop(); setInfo(null); rememberOff(true); }
+      else if (root) { setInfo(await shareStart(root)); refreshSessions(); rememberOff(false); }
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   }, [info, root]);
