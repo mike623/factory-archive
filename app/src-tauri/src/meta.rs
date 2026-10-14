@@ -24,6 +24,8 @@ pub struct BlueprintMeta {
     pub description: Option<String>,
     pub author: Option<String>,
     pub category: Option<String>,
+    /// set by the user in the app, under `category`
+    pub subcategory: Option<String>,
     pub tags: Vec<String>,
     pub site_name: Option<String>,
     /// file name of the saved picture inside the store, e.g. "<key>.jpg"
@@ -87,6 +89,7 @@ impl MetaStore {
             description: m.description.clone(),
             author: m.author.clone(),
             category: m.category.clone(),
+            subcategory: None,
             tags: m.tags.clone(),
             site_name: m.site_name.clone(),
             image_file: None,
@@ -102,6 +105,23 @@ impl MetaStore {
         if self.load(&k).is_none() {
             let _ = self.save(&k, &BlueprintMeta { source: "local".into(), imported_at: now(), ..Default::default() }, None);
         }
+    }
+
+    /// Set (or clear, with empty text) a blueprint's category and sub-category.
+    /// A sub-category needs a category. Other details are kept.
+    pub fn set_category(&self, sbp: &[u8], category: &str, subcategory: &str) -> Result<(), String> {
+        let clean = |s: &str| -> Result<Option<String>, String> {
+            let s = s.trim();
+            if s.chars().count() > 64 || s.chars().any(char::is_control) { return Err("Category names can be up to 64 characters.".into()); }
+            Ok((!s.is_empty()).then(|| s.to_string()))
+        };
+        let (category, subcategory) = (clean(category)?, clean(subcategory)?);
+        if category.is_none() && subcategory.is_some() { return Err("Choose a category for the sub-category.".into()); }
+        let k = key(sbp);
+        let mut meta = self.load(&k).unwrap_or_else(|| BlueprintMeta { source: "local".into(), imported_at: now(), ..Default::default() });
+        meta.category = category;
+        meta.subcategory = subcategory;
+        self.save(&k, &meta, None)
     }
 
     /// Key for a .sbp on disk, cached by size + modification time.
@@ -155,6 +175,18 @@ mod tests {
         // keys from the UI are validated
         assert!(store.load("../../etc/passwd").is_none());
         assert!(store.image_data_url("zz").is_none());
+
+        // categories: set, keep other details, clear; sub-category needs a category
+        store.set_category(b"SBP", " Production ", "Steel").unwrap();
+        let back = store.load(&k).unwrap();
+        assert_eq!((back.category.as_deref(), back.subcategory.as_deref()), (Some("Production"), Some("Steel")));
+        assert_eq!(back.title.as_deref(), Some("SFS Foundry x3"));
+        assert!(store.set_category(b"SBP", "", "Steel").is_err());
+        assert!(store.set_category(b"SBP", &"x".repeat(65), "").is_err());
+        store.set_category(b"SBP", "", "").unwrap();
+        assert_eq!(store.load(&k).unwrap().category, None);
+        store.set_category(b"NEW", "Power", "").unwrap();
+        assert_eq!(store.load(&key(b"NEW")).unwrap().source, "local");
 
         // file keys are cached and follow content
         let f = dir.join("a.sbp");

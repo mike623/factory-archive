@@ -123,4 +123,9 @@ export async function renameBlueprint(root: string, session: string, from: strin
   await invoke('rename_blueprint', { root, session, from, to });
 }
 
+/** Set a blueprint's category and sub-category (kept in the app's data folder). Empty text clears. */
+export async function setBlueprintCategory(root: string, session: string, name: string, category: string, subcategory: string): Promise<void> {
+  await invoke('set_category', { root, session, name, category, subcategory });
+}
+
 export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);

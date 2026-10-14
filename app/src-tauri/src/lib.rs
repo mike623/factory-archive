@@ -222,6 +222,13 @@ fn rename_blueprint(root: String, session: String, from: String, to: String) -> 
     blueprints::rename(&PathBuf::from(root), &session, &from, &to).map_err(|e| e.to_string())
 }
 
+/// Set a blueprint's category and sub-category (stored in the app data folder, not the game's).
+#[tauri::command]
+fn set_category(store: tauri::State<'_, MetaStore>, root: String, session: String, name: String, category: String, subcategory: String) -> Result<(), String> {
+    let sbp = blueprints::read_file(&PathBuf::from(root), &session, &name, "sbp").map_err(|e| e.to_string())?;
+    store.set_category(&sbp, &category, &subcategory)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LinkImport {
@@ -270,7 +277,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, rename_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, rename_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

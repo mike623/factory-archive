@@ -11,6 +11,8 @@ export interface Blueprint {
   name: string;
   source: SourceId;
   category: string;
+  /** set by the user, under `category` */
+  subcategory?: string;
   tags: string[];
   modded: boolean;
   materials: string[];
@@ -59,7 +61,6 @@ export const STATUS: Record<StatusId, Status> = {
 };
 
 export const ALL_TAGS = ['Architecture','Power','Logistics','Production','Trains','Starter','Modular','World Grid','Vanilla','Modded'];
-export const CATEGORIES = ['Manufacturing','Power','Logistics','Architecture','Transport'];
 export const GAME_VERSIONS = ['1.0','0.8','Any'];
 
 export type NavId = 'library' | 'import' | 'recent' | 'favorites';
@@ -67,7 +68,7 @@ export type NavId = 'library' | 'import' | 'recent' | 'favorites';
 export const SAMPLE_LIBRARY: Blueprint[] = [
   {
     id:'bp-001', name:'Modular Manufacturer L', author:'KapitanWalnut', source:'scim',
-    category:'Manufacturing', tags:['Production','Modular','World Grid','Vanilla'],
+    category:'Manufacturing', subcategory:'Heavy Frames', tags:['Production','Modular','World Grid','Vanilla'],
     gameVersion:'1.0', modded:false, dims:{x:32,y:24,z:18}, power:{use:480, gen:0},
     machines:42, materials:['Heavy Modular Frame','Computer','Motor'], shots:5,
     files:{sbp:true,sbpcfg:true}, status:'installed', hue:38, seed:7, sizeKB:214, downloads:18420,
@@ -76,7 +77,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-002', name:'Compact Coal Power Starter', author:'gridlocked', source:'sbp',
-    category:'Power', tags:['Power','Starter','Vanilla'],
+    category:'Power', subcategory:'Coal', tags:['Power','Starter','Vanilla'],
     gameVersion:'1.0', modded:false, dims:{x:18,y:16,z:12}, power:{use:0, gen:900},
     machines:12, materials:['Coal','Water'], shots:4,
     files:{sbp:true,sbpcfg:false}, status:'config', hue:34, seed:3, sizeKB:88, downloads:9310,
@@ -85,7 +86,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-003', name:'30x Packager Cube 1800/min', author:'BeltGremlin', source:'scim',
-    category:'Manufacturing', tags:['Production','Logistics','Modular'],
+    category:'Manufacturing', subcategory:'Motors', tags:['Production','Logistics','Modular'],
     gameVersion:'1.0', modded:false, dims:{x:20,y:20,z:28}, power:{use:300, gen:0},
     machines:30, materials:['Packaged Fuel','Empty Canister'], shots:6,
     files:{sbp:true,sbpcfg:true}, status:'update', hue:42, seed:11, sizeKB:176, downloads:24110,
@@ -103,7 +104,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-005', name:'Heavy Modular Frame Microfactory', author:'KapitanWalnut', source:'local',
-    category:'Manufacturing', tags:['Production','Modular','Starter'],
+    category:'Manufacturing', subcategory:'Starter', tags:['Production','Modular','Starter'],
     gameVersion:'1.0', modded:false, dims:{x:24,y:18,z:14}, power:{use:260, gen:0},
     machines:24, materials:['Heavy Modular Frame','Modular Frame','Steel Pipe'], shots:3,
     files:{sbp:true,sbpcfg:true}, status:'none', hue:40, seed:5, sizeKB:142, downloads:0,
@@ -112,7 +113,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-006', name:'World Grid Aligned Smelter Block', author:'gridlocked', source:'scim',
-    category:'Manufacturing', tags:['Production','World Grid','Vanilla','Starter'],
+    category:'Manufacturing', subcategory:'Smelting', tags:['Production','World Grid','Vanilla','Starter'],
     gameVersion:'1.0', modded:false, dims:{x:16,y:32,z:10}, power:{use:200, gen:0},
     machines:24, materials:['Iron Ingot','Copper Ingot'], shots:4,
     files:{sbp:true,sbpcfg:true}, status:'installed', hue:36, seed:13, sizeKB:120, downloads:15600,
@@ -130,7 +131,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-008', name:'Aluminum Scrap Refinery Wing', author:'OxideWorks', source:'sbp',
-    category:'Manufacturing', tags:['Production','Modular','Vanilla'],
+    category:'Manufacturing', subcategory:'Motors', tags:['Production','Modular','Vanilla'],
     gameVersion:'1.0', modded:false, dims:{x:36,y:28,z:16}, power:{use:640, gen:0},
     machines:48, materials:['Alumina Solution','Aluminum Scrap','Water'], shots:6,
     files:{sbp:true,sbpcfg:true}, status:'update', hue:44, seed:17, sizeKB:288, downloads:12700,
@@ -157,7 +158,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-011', name:'Fuel Generator Array 2.5GW', author:'gridlocked', source:'url',
-    category:'Power', tags:['Power','Modular','Vanilla'],
+    category:'Power', subcategory:'Fuel', tags:['Power','Modular','Vanilla'],
     gameVersion:'1.0', modded:false, dims:{x:40,y:20,z:14}, power:{use:0, gen:2500},
     machines:25, materials:['Fuel','Crude Oil'], shots:4,
     files:{sbp:true,sbpcfg:true}, status:'installed', hue:38, seed:37, sizeKB:230, downloads:0,
@@ -166,7 +167,7 @@ export const SAMPLE_LIBRARY: Blueprint[] = [
   },
   {
     id:'bp-012', name:'Rail Switchyard Junction', author:'NocturneFICSIT', source:'local',
-    category:'Transport', tags:['Trains','Logistics','World Grid'],
+    category:'Transport', subcategory:'Stations', tags:['Trains','Logistics','World Grid'],
     gameVersion:'1.0', modded:false, dims:{x:64,y:48,z:8}, power:{use:0, gen:0},
     machines:0, materials:['Railway','Train Signal'], shots:6,
     files:{sbp:true,sbpcfg:false}, status:'config', hue:34, seed:41, sizeKB:340, downloads:0,

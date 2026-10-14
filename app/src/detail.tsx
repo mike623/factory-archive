@@ -1,5 +1,5 @@
 // detail.tsx — blueprint detail screen
-import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { SOURCES, STATUS, type Blueprint } from './data';
 import { Btn, IconBtn, MetaStat, ModdedBadge, SourceBadge, SourceMark, StatusPill, Tag, Thumb } from './components';
 import {
@@ -9,6 +9,7 @@ import {
 import { copyText, openExternal } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
 import { BreakdownSection, ConfigSwatch, useBlueprintInfo } from './breakdown';
+import type { CategoryNode } from './library';
 
 const overlayChip = {
   fontSize: 10, padding: '4px 9px', borderRadius: 5, background: 'rgba(8,9,11,.7)',
@@ -124,9 +125,75 @@ function NameTitle({ bp, onRename }: { bp: Blueprint; onRename?: (b: Blueprint, 
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, fav, onToggleFav, root = null }: {
+const fieldStyle = {
+  width: '100%', height: 32, padding: '0 10px', borderRadius: 'var(--r-sm)', background: 'var(--bg-deep)',
+  border: '1px solid var(--border)', color: 'var(--text)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none',
+} as const;
+
+/** Category › sub-category, with an inline editor when `onSave` is given. */
+function CategoryCard({ bp, categories, onSave }: {
+  bp: Blueprint; categories: CategoryNode[];
+  onSave?: (b: Blueprint, category: string, subcategory: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<{ cat: string; sub: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setDraft(null); setError(null); }, [bp.id]);
+
+  if (!draft) return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span className="tlabel">Category</span>
+        {onSave && <IconBtn icon={IcPencil} title="Edit category" onClick={() => setDraft({ cat: bp.category, sub: bp.subcategory ?? '' })} />}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, flexWrap: 'wrap',
+        color: bp.category ? 'var(--text)' : 'var(--text-mute)' }}>
+        {bp.category || 'Uncategorized'}
+        {bp.subcategory && <><IcChevron size={12} style={{ color: 'var(--text-mute)' }} />{bp.subcategory}</>}
+      </div>
+    </div>
+  );
+  const { cat, sub } = draft;
+  const subs = categories.find(c => c.name === cat.trim())?.subs ?? [];
+  const save = async () => {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try { await onSave!(bp, cat, sub); setDraft(null); }
+    catch (e) { setError(String(e).replace(/^Error: /, '')); }
+    finally { setBusy(false); }
+  };
+  const keys = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') { e.stopPropagation(); setDraft(null); }
+  };
+  return (
+    <div>
+      <div className="tlabel" style={{ marginBottom: 8 }}>Category</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <input autoFocus value={cat} list="fa-categories" placeholder="Category" aria-label="Category" maxLength={64} disabled={busy}
+          onChange={e => { setDraft({ cat: e.target.value, sub }); setError(null); }} onKeyDown={keys} style={fieldStyle} />
+        <input value={sub} list="fa-subcategories" placeholder="Sub-category (optional)" aria-label="Sub-category" maxLength={64}
+          disabled={busy || !cat.trim()} onChange={e => { setDraft({ cat, sub: e.target.value }); setError(null); }} onKeyDown={keys}
+          style={fieldStyle} />
+        <datalist id="fa-categories">{categories.filter(c => c.name).map(c => <option key={c.name} value={c.name} />)}</datalist>
+        <datalist id="fa-subcategories">{subs.filter(x => x.name).map(x => <option key={x.name} value={x.name} />)}</datalist>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Btn variant="primary" size="sm" icon={IcCheck} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</Btn>
+          <Btn variant="ghost" size="sm" disabled={busy} onClick={() => setDraft(null)}>Cancel</Btn>
+        </div>
+      </div>
+      <div role={error ? 'alert' : undefined} style={{ marginTop: 6, fontSize: 11, lineHeight: 1.45, color: error ? 'var(--warn)' : 'var(--text-mute)' }}>
+        {error ?? 'Kept in Factory Archive, not in the game files. Leave empty to clear.'}</div>
+    </div>
+  );
+}
+
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, onSetCategory, categories = [], fav, onToggleFav, root = null }: {
   bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
   onRename?: (b: Blueprint, name: string) => Promise<void>;
+  onSetCategory?: (b: Blueprint, category: string, subcategory: string) => Promise<void>;
+  /** every category in the library, for suggestions */
+  categories?: CategoryNode[];
   fav: boolean; onToggleFav: () => void;
   /** game blueprints folder, to read this blueprint's own files */
   root?: string | null;
@@ -237,6 +304,8 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, 
                 : <Btn variant="primary" full icon={IcDownload} onClick={() => onExport(bp)}>
                     {bp.status === 'installed' ? 'Re-export to folder' : bp.status === 'update' ? 'Update in folder' : 'Export to game folder'}</Btn>}
             </div>
+
+            <CategoryCard bp={bp} categories={categories} onSave={onSetCategory} />
 
             {(bp.dims || bp.power || bp.machines != null) && <div>
               <div className="tlabel" style={{ marginBottom: 11 }}>Specifications</div>

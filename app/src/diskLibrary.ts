@@ -5,7 +5,7 @@ import type { Blueprint, SourceId } from './data';
 
 export interface BlueprintMeta {
   source: string; sourceUrl?: string | null; title?: string | null; description?: string | null;
-  author?: string | null; category?: string | null; tags?: string[]; siteName?: string | null;
+  author?: string | null; category?: string | null; subcategory?: string | null; tags?: string[]; siteName?: string | null;
   imageFile?: string | null; importedAt?: number;
 }
 export interface DiskFile {
@@ -32,6 +32,7 @@ export function toBlueprint(session: string, f: DiskFile): Blueprint {
     name: f.name,
     source,
     category: m?.category ?? '',
+    subcategory: m?.subcategory ?? undefined,
     tags: m?.tags ?? [],
     modded: false,
     materials: [],

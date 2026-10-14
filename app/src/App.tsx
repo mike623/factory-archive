@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { powerTotal, SAMPLE_LIBRARY, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn } from './components';
 import { IcCopy, IcExport } from './icons';
-import { EMPTY_FILTERS, FilterRail, Sidebar, type Filters } from './library';
+import { categoryTree, EMPTY_FILTERS, FilterRail, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
 import { ExportDrawer, ImportModal, type LinkImport } from './modals';
@@ -16,7 +16,8 @@ import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, renameBlueprint, type Outcome,
+  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, renameBlueprint, setBlueprintCategory,
+  type Outcome,
 } from './platform';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
@@ -58,10 +59,12 @@ function matches(b: Blueprint, query: string, source: SourceId | null, f: Filter
   if (query) {
     const q = query.toLowerCase();
     if (!(b.name.toLowerCase().includes(q) || (b.author ?? '').toLowerCase().includes(q) || (b.session ?? '').toLowerCase().includes(q) ||
+          b.category.toLowerCase().includes(q) || (b.subcategory ?? '').toLowerCase().includes(q) ||
           b.tags.some(t => t.toLowerCase().includes(q)))) return false;
   }
   if (source && b.source !== source) return false;
-  if (f.category && b.category !== f.category) return false;
+  if (f.category !== null && b.category !== f.category) return false;
+  if (f.subcategory !== null && (b.subcategory ?? '') !== f.subcategory) return false;
   if (f.tags.length && !f.tags.every(t => b.tags.includes(t))) return false;
   if (f.modded && !b.modded) return false;
   if (f.paired && !b.files.sbpcfg) return false;
@@ -110,9 +113,9 @@ export default function App() {
   const disk = useDiskLibrary(gameFolder.current?.path ?? null, share.imports.length);
   const items = disk.items ?? library;
   const metadata = items.some(b => !b.onDisk);
-  // for files on disk, category / tags / sources come from imported pages' details
+  // for files on disk, tags / sources come from imported pages' details; categories are set in the app
   const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const categoryOptions = useMemo(() => metadata ? undefined : uniq(items.map(b => b.category)), [items, metadata]);
+  const allCategories = useMemo(() => categoryTree(items), [items]);
   const tagChoices = useMemo(() => metadata ? undefined : uniq(items.flatMap(b => b.tags)).slice(0, 40), [items, metadata]);
   const showSources = metadata || items.some(b => b.source !== 'local');
 
@@ -139,6 +142,8 @@ export default function App() {
   const filtered = useMemo(
     () => scoped.filter(b => matches(b, query, sourceFilter, filters, sessionFilter)).sort(SORTERS[sortKey]),
     [scoped, query, sourceFilter, filters, sessionFilter, sortKey]);
+  const categoryOptions = useMemo(() => categoryTree(scoped.filter(b => !sessionFilter || b.session === sessionFilter)),
+    [scoped, sessionFilter]);
   const sessionIsEmpty = !!sessionFilter && !scoped.some(b => b.session === sessionFilter);
 
   const toggleSel = useCallback((id: string) => setSel(s => {
@@ -206,6 +211,17 @@ export default function App() {
     setDetailId(d => d === b.id ? newId : d);
   };
 
+  const setCategory = async (b: Blueprint, category: string, subcategory: string) => {
+    if (b.onDisk && isTauri()) {
+      const root = gameFolder.current?.path;
+      if (!root || !b.session) throw new Error('Satisfactory folder not found');
+      await setBlueprintCategory(root, b.session, b.name, category, subcategory);
+      await disk.reload();
+    } else { // browser preview
+      setLibrary(l => l.map(x => x.id === b.id ? { ...x, category: category.trim(), subcategory: subcategory.trim() || undefined } : x));
+    }
+  };
+
   // friends' imports through the share page land in Import Queue too
   const lastShared = share.imports[0];
   useEffect(() => { if (lastShared) rememberImported([`disk:${lastShared.session}/${lastShared.name}`]); }, [lastShared]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -256,6 +272,7 @@ export default function App() {
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
               onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp}
+              onSetCategory={setCategory} categories={allCategories}
               root={gameFolder.current?.path ?? null} />
           </main>
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
