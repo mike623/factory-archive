@@ -104,10 +104,11 @@ fn open_folder(app: tauri::AppHandle, root: String, session: Option<String>) -> 
 /// Start sharing `root` (a game's `blueprints` folder) with players on the local network.
 #[tauri::command]
 fn share_start(app: tauri::AppHandle, state: tauri::State<'_, ShareState>, root: String) -> Result<ShareInfo, String> {
+    let app2 = app.clone();
     state.start(PathBuf::from(root), move |ev, bp| {
         let _ = app.state::<MetaStore>().save_resolved(bp);
         let _ = app.emit("share-imported", ev);
-    })
+    }, move |url, dir| app2.state::<MetaStore>().imported_from(url, dir))
 }
 
 #[tauri::command]
@@ -254,10 +255,20 @@ struct LinkImport {
     size_kb: u64,
 }
 
+/// Name of the blueprint in `session` already downloaded from `url`, so the UI can block a repeat.
+#[tauri::command]
+fn link_imported(store: tauri::State<'_, MetaStore>, root: String, session: String, url: String) -> Option<String> {
+    blueprints::valid_component(&session).then_some(())?;
+    store.imported_from(&url, &PathBuf::from(root).join(session))
+}
+
 /// Download a blueprint from a SCIM / Satisfactory Blueprints / direct link and add it to a world.
 #[tauri::command]
 async fn import_link(app: tauri::AppHandle, root: String, session: String, url: String) -> Result<LinkImport, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(n) = blueprints::valid_component(&session).then(|| app.state::<MetaStore>().imported_from(&url, &PathBuf::from(&root).join(&session))).flatten() {
+            return Err(blueprints::BpError::Duplicate(n).to_string());
+        }
         let bp = resolve::resolve(&url)?;
         blueprints::write_blueprint(&PathBuf::from(&root), &session, &bp.name, &bp.sbp, bp.cfg.as_deref(), true)
             .map_err(|e| e.to_string())?;
@@ -320,7 +331,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

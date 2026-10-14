@@ -39,10 +39,12 @@ type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed' | 'save
 
 export interface LinkImport { name: string; session: string; hasCfg: boolean; sizeKb: number }
 
-export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink }: {
+export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink, findImported }: {
   open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void;
   /** desktop app: download the blueprint behind the link into `target` */
   importLink?: (url: string) => Promise<LinkImport>;
+  /** desktop app: name of the blueprint in `target` already downloaded from this link */
+  findImported?: (url: string) => Promise<string | null>;
   /** desktop app: pick local .sbp files instead (they go to `target`) */
   onBrowse?: () => void; target?: string | null;
 }) {
@@ -59,6 +61,16 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
     if (open) { setUrl(''); setPhase('idle'); setStep(0); timers.current.push(window.setTimeout(() => inputRef.current?.focus(), 60)); }
     return clearTimers;
   }, [open]);
+
+  // spot links already in the target world, so they can't be added twice
+  const [already, setAlready] = useState<string | null>(null);
+  useEffect(() => {
+    setAlready(null);
+    if (!findImported || !url.trim() || phase === 'saved') return;
+    let live = true;
+    const t = window.setTimeout(() => findImported(url.trim()).then(n => { if (live) setAlready(n); }).catch(() => {}), 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [url, target, phase, findImported]);
 
   const src = detectSource(url);
   const resolved = src ? mockResolve(src, url.trim()) : null;
@@ -212,7 +224,8 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
           borderTop: '1px solid var(--border)' }}>
           <span className="tlabel" style={{ fontSize: 9, color: 'var(--text-faint)' }}>
             {importLink
-              ? (target ? `Downloads into ${target}` : 'Pick a world session in the filters first')
+              ? (already ? <span style={{ color: 'var(--warn)' }}>{`Already imported: in ${target} as "${already}"`}</span>
+                : target ? `Downloads into ${target}` : 'Pick a world session in the filters first')
               : phase === 'done' ? '✓ Added to library' : 'Import adds to library — export to game folder separately'}</span>
           <div style={{ flex: 1 }} />
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -221,7 +234,7 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
             : phase === 'resolved' || phase === 'done'
             ? <Btn variant="primary" icon={phase === 'done' ? IcCheck : IcPlus} disabled={phase === 'done'} onClick={add}>
                 {phase === 'done' ? 'Added' : 'Add to library'}</Btn>
-            : <Btn variant="primary" icon={importLink ? IcDownload : IcSearch} disabled={!src || phase === 'resolving' || (!!importLink && !target)} onClick={resolve}>
+            : <Btn variant="primary" icon={importLink ? IcDownload : IcSearch} disabled={!src || phase === 'resolving' || (!!importLink && (!target || !!already))} onClick={resolve}>
                 {phase === 'resolving' ? (importLink ? 'Downloading…' : 'Resolving…') : importLink ? 'Download & add' : 'Resolve link'}</Btn>}
         </div>
       </div>

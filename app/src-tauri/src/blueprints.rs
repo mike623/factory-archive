@@ -35,6 +35,8 @@ pub enum BpError {
     BadName,
     NotFound,
     Exists,
+    /// the same blueprint (identical .sbp) is already in the session, under this name
+    Duplicate(String),
     Io(String),
 }
 
@@ -44,6 +46,7 @@ impl std::fmt::Display for BpError {
             BpError::BadName => write!(f, "invalid session or blueprint name"),
             BpError::NotFound => write!(f, "not found"),
             BpError::Exists => write!(f, "a blueprint with that name already exists in this session"),
+            BpError::Duplicate(n) => write!(f, "already imported: this blueprint is in this session as \"{n}\""),
             BpError::Io(e) => write!(f, "{e}"),
         }
     }
@@ -170,6 +173,7 @@ pub fn write_blueprint(root: &Path, session: &str, name: &str, sbp: &[u8], cfg: 
         fs::create_dir_all(root.join(session)).map_err(io)?;
     }
     if sbp_path.exists() || cfg_path.exists() { return Err(BpError::Exists); }
+    if let Some(n) = find_same(&root.join(session), sbp) { return Err(BpError::Duplicate(n)); }
     fs::write(&sbp_path, sbp).map_err(io)?;
     if let Some(cfg) = cfg {
         if let Err(e) = fs::write(&cfg_path, cfg) {
@@ -178,6 +182,17 @@ pub fn write_blueprint(root: &Path, session: &str, name: &str, sbp: &[u8], cfg: 
         }
     }
     Ok(())
+}
+
+/// Name of a blueprint in `dir` whose .sbp is byte-identical to `sbp`. Only same-size files are read.
+fn find_same(dir: &Path, sbp: &[u8]) -> Option<String> {
+    fs::read_dir(dir).ok()?.flatten().find_map(|f| {
+        let p = f.path();
+        let is_sbp = p.extension().map(|e| e.eq_ignore_ascii_case("sbp")) == Some(true);
+        (is_sbp && f.metadata().ok()?.len() == sbp.len() as u64 && fs::read(&p).ok()? == sbp)
+            .then_some(())?;
+        Some(p.file_stem()?.to_string_lossy().into_owned())
+    })
 }
 
 /// Result of adding one blueprint, for the UI to report.
@@ -403,6 +418,10 @@ mod tests {
         assert_eq!(read_file(&root, "World", "Steel", "sbp").unwrap(), b"sbp");
         assert_eq!(read_file(&root, "World", "Steel", "sbpcfg").unwrap(), b"cfg");
         assert_eq!(write_blueprint(&root, "World", "Steel", b"new", None, false), Err(BpError::Exists));
+        // same content under another name is a duplicate; other worlds don't count
+        assert_eq!(write_blueprint(&root, "World", "Steel copy", b"sbp", None, false), Err(BpError::Duplicate("Steel".into())));
+        write_blueprint(&root, "World", "Other", b"abc", None, false).unwrap(); // same size, different bytes
+        write_blueprint(&root, "World 2", "Steel copy", b"sbp", None, true).unwrap();
         assert_eq!(write_blueprint(&root, "Missing", "X", b"x", None, false), Err(BpError::NotFound));
         assert_eq!(write_blueprint(&root, "..", "X", b"x", None, true), Err(BpError::BadName));
         write_blueprint(&root, "New World", "First", b"x", None, true).unwrap();
@@ -417,7 +436,7 @@ mod tests {
         let root = tmp("delete");
         fs::create_dir_all(root.join("World")).unwrap();
         write_blueprint(&root, "World", "Pair", b"S", Some(b"C"), false).unwrap();
-        write_blueprint(&root, "World", "Solo", b"S", None, false).unwrap();
+        write_blueprint(&root, "World", "Solo", b"T", None, false).unwrap();
         assert_eq!(files_of(&root, "World", "Pair").unwrap().len(), 2);
         assert_eq!(files_of(&root, "World", "Solo").unwrap(), [root.join("World").join("Solo.sbp")]);
         assert!(matches!(files_of(&root, "World", "Missing"), Err(BpError::NotFound)));

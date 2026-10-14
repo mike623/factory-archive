@@ -186,6 +186,10 @@ export default function App() {
     disk.reload();
     return r;
   };
+  const findImported = useCallback(async (url: string) => {
+    const root = gameFolder.current?.path;
+    return root && importTarget ? invoke<string | null>('link_imported', { root, session: importTarget, url }) : null;
+  }, [gameFolder.current?.path, importTarget]);
   const [refetching, setRefetching] = useState(false);
   const refetchAll = async () => {
     setRefetching(true);
@@ -357,7 +361,7 @@ export default function App() {
         </div></div>}
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
         onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
-        importLink={isTauri() ? importLink : undefined} />
+        importLink={isTauri() ? importLink : undefined} findImported={isTauri() ? findImported : undefined} />
       {copyMode
         ? <CopyDrawer open={exportOpen} items={selItems} sessions={sessionOptions.map(o => o.name)} defaultTarget={currentSession}
             onClose={() => { setExportOpen(false); }} onRemove={toggleSel} onCopy={copyToWorld}

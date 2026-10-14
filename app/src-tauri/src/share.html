@@ -95,6 +95,25 @@
   const kb = (b) => b < 1024 ? b + ' B' : (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
   const fileUrl = (s, n, ext) => '/api/file/' + encodeURIComponent(s) + '/' + encodeURIComponent(n + '.' + ext);
 
+  // disable "Add to world" while the typed link is already in the target world
+  let hasTarget = false, checkSeq = 0;
+  async function check() {
+    const url = $('url').value.trim(), seq = ++checkSeq, btn = $('submit'), msg = $('msg');
+    btn.disabled = !hasTarget;
+    if (msg.dataset.dup) { msg.className = 'msg'; msg.textContent = ''; delete msg.dataset.dup; }
+    if (!url || !hasTarget) return;
+    try {
+      const r = await fetch('/api/check?url=' + encodeURIComponent(url));
+      const { imported, session } = await r.json();
+      if (seq !== checkSeq || !imported) return;
+      btn.disabled = true;
+      msg.className = 'msg err'; msg.dataset.dup = '1';
+      msg.textContent = 'Already imported: it\'s in ' + session + ' as "' + imported + '".';
+    } catch (e) { /* the import itself still refuses duplicates */ }
+  }
+  let checkTimer;
+  $('url').addEventListener('input', () => { clearTimeout(checkTimer); checkTimer = setTimeout(check, 250); });
+
   async function load() {
     const box = $('sessions');
     let sessions, target;
@@ -109,7 +128,8 @@
     $('target').replaceChildren(...(target
       ? ['Adding to ', el('strong', { textContent: target.name }), ' · ' + (why[target.source] || '')]
       : ["The host hasn't picked a world yet."]));
-    $('submit').disabled = !target;
+    hasTarget = !!target;
+    check();
 
     if (target && !sessions.some(s => s.name === target.name)) sessions.unshift({ name: target.name, blueprints: [] });
     if (!sessions.length) {
@@ -131,7 +151,7 @@
   $('import').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = $('msg'), btn = $('submit');
-    btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Adding…';
+    btn.disabled = true; delete msg.dataset.dup; msg.className = 'msg'; msg.textContent = 'Adding…';
     try {
       const r = await fetch('/api/import', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -139,6 +159,7 @@
       });
       const data = await r.json().catch(() => ({}));
       if (r.ok) {
+        delete msg.dataset.dup;
         msg.className = 'msg ok';
         msg.textContent = '✓ Added "' + data.name + '" to ' + data.session + '. Ask the host to reload the session.';
         $('url').value = '';
@@ -150,7 +171,7 @@
     } catch (err) {
       msg.className = 'msg err'; msg.textContent = "Couldn't reach the host. Is sharing still on?";
     } finally {
-      btn.disabled = false;
+      btn.disabled = !hasTarget;
     }
   });
   $('refresh').addEventListener('click', load);

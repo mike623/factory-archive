@@ -139,6 +139,21 @@ impl MetaStore {
         Some(k)
     }
 
+    /// Name of the blueprint in `session_dir` that was downloaded from `url`, if any. Lets the
+    /// UI say "already imported" before downloading anything.
+    pub fn imported_from(&self, url: &str, session_dir: &Path) -> Option<String> {
+        let url = url::Url::parse(url.trim()).ok()?.to_string(); // same form `resolve` stores
+        let keys: Vec<String> = self.linked().into_iter()
+            .filter(|(_, m)| m.source_url.as_deref() == Some(url.as_str())).map(|(k, _)| k).collect();
+        if keys.is_empty() { return None; }
+        fs::read_dir(session_dir).ok()?.flatten().find_map(|f| {
+            let p = f.path();
+            (p.extension().map(|e| e.eq_ignore_ascii_case("sbp")) == Some(true)).then_some(())?;
+            keys.contains(&self.key_for_file(&p)?).then_some(())?;
+            Some(p.file_stem()?.to_string_lossy().into_owned())
+        })
+    }
+
     /// The saved picture as a data: URL, for the UI.
     pub fn image_data_url(&self, key: &str) -> Option<String> {
         let file = self.load(key)?.image_file?;
@@ -196,6 +211,11 @@ mod tests {
         let f = dir.join("a.sbp");
         fs::write(&f, b"SBP").unwrap();
         assert_eq!(store.key_for_file(&f).as_deref(), Some(k.as_str()));
+
+        // a link is "already imported" only while its file is in that world
+        assert_eq!(store.imported_from(" https://x.test/1 ", &dir).as_deref(), Some("a"));
+        assert_eq!(store.imported_from("https://x.test/2", &dir), None);
+        assert_eq!(store.imported_from("https://x.test/1", &dir.join("other")), None);
         fs::remove_dir_all(&dir).ok();
     }
 }

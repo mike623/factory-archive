@@ -11,7 +11,7 @@ use crate::resolve;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
@@ -60,7 +60,13 @@ pub fn target_session(root: &std::path::Path, pinned: &Mutex<Option<String>>) ->
 
 impl ShareState {
     /// `on_import` runs on the server thread after a friend's blueprint is written.
-    pub fn start(&self, root: PathBuf, on_import: impl Fn(ImportedEvent, &resolve::Resolved) + Send + 'static) -> Result<ShareInfo, String> {
+    /// `imported_from(url, session folder)` names the blueprint already downloaded from that link.
+    pub fn start(
+        &self,
+        root: PathBuf,
+        on_import: impl Fn(ImportedEvent, &resolve::Resolved) + Send + 'static,
+        imported_from: impl Fn(&str, &Path) -> Option<String> + Send + 'static,
+    ) -> Result<ShareInfo, String> {
         let mut guard = self.running.lock().map_err(|e| e.to_string())?;
         if let Some(r) = guard.as_ref() {
             if r.info.root == root.to_string_lossy() { return Ok(r.info.clone()); }
@@ -76,7 +82,7 @@ impl ShareState {
             .name("share-server".into())
             .spawn(move || {
                 for req in srv.incoming_requests() {
-                    handle(req, &root, &pinned, &on_import);
+                    handle(req, &root, &pinned, &on_import, &imported_from);
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -231,9 +237,16 @@ struct ImportBody {
     url: String,
 }
 
-fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_import: &dyn Fn(ImportedEvent, &resolve::Resolved)) {
+fn handle(
+    mut req: Request,
+    root: &PathBuf,
+    pinned: &Mutex<Option<String>>,
+    on_import: &dyn Fn(ImportedEvent, &resolve::Resolved),
+    imported_from: &dyn Fn(&str, &Path) -> Option<String>,
+) {
     if !host_allowed(&req) { return error(req, 403, "forbidden host"); }
-    let path = req.url().split('?').next().unwrap_or("").to_string();
+    let (path, query) = req.url().split_once('?').unwrap_or((req.url(), ""));
+    let (path, query) = (path.to_string(), query.to_string());
     let method = req.method().clone();
 
     match (method, path.as_str()) {
@@ -244,6 +257,15 @@ fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_i
             "target": target_session(root, pinned),
             "sessions": blueprints::list_sessions(root),
         })),
+
+        // is this link already in the world friends are adding to? (no download, just a lookup)
+        (Method::Get, "/api/check") => {
+            let url = url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()).unwrap_or_default();
+            let target = target_session(root, pinned);
+            let name = target.as_ref().filter(|t| blueprints::valid_component(&t.name))
+                .and_then(|t| imported_from(&url, &root.join(&t.name)));
+            json(req, 200, &serde_json::json!({ "imported": name, "session": target.map(|t| t.name) }))
+        }
 
         (Method::Get, p) if p.starts_with("/api/file/") => {
             // /api/file/<session>/<name>.<ext>
@@ -272,6 +294,11 @@ fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_i
                 return error(req, 409, "The host hasn't picked a world session yet.");
             };
 
+            if !blueprints::valid_component(&target.name) { return error(req, 400, &BpError::BadName.to_string()); }
+            if let Some(name) = imported_from(&input.url, &root.join(&target.name)) {
+                return error(req, 409, &BpError::Duplicate(name).to_string());
+            }
+
             match resolve::resolve(&input.url) {
                 Err(msg) => error(req, 422, &msg),
                 Ok(bp) => match blueprints::write_blueprint(root, &target.name, &bp.name, &bp.sbp, bp.cfg.as_deref(), true) {
@@ -279,8 +306,8 @@ fn handle(mut req: Request, root: &PathBuf, pinned: &Mutex<Option<String>>, on_i
                         on_import(ImportedEvent { name: bp.name.clone(), session: target.name.clone() }, &bp);
                         json(req, 200, &serde_json::json!({ "ok": true, "name": bp.name, "session": target.name }))
                     }
-                    Err(BpError::Exists) => error(req, 409, &BpError::Exists.to_string()),
-                                        Err(e) => error(req, 500, &e.to_string()),
+                    Err(e @ (BpError::Exists | BpError::Duplicate(_))) => error(req, 409, &e.to_string()),
+                    Err(e) => error(req, 500, &e.to_string()),
                 },
             }
         }
@@ -321,7 +348,9 @@ mod tests {
         std::fs::write(root.join("secret.txt"), b"nope").unwrap();
 
         let state = ShareState::default();
-        let info = state.start(root.clone(), |_, _| {}).unwrap();
+        let info = state.start(root.clone(), |_, _| {}, |url, dir| {
+            (url == "https://x.test/steel" && dir.ends_with("My World")).then(|| "Steel 360".to_string())
+        }).unwrap();
         let port = info.port;
         let host = format!("127.0.0.1:{port}");
         assert!(info.urls.iter().any(|u| u.ends_with(&format!(":{port}"))));
@@ -347,6 +376,13 @@ mod tests {
         assert_eq!(get(port, "/api/file/My%20World/..%2F..%2Fsecret.txt", &host).0, 400);
         assert_eq!(get(port, "/api/file/My%20World/Nope.sbp", &host).0, 404);
         assert_eq!(get(port, "/", "evil.example.com").0, 403);
+
+        // already-imported links are spotted before any download
+        let check = "/api/check?url=https%3A%2F%2Fx.test%2Fsteel";
+        assert!(get(port, check, &host).1.contains(r#""imported":"Steel 360""#));
+        assert!(get(port, "/api/check?url=https%3A%2F%2Fx.test%2Fother", &host).1.contains(r#""imported":null"#));
+        let (st, body) = post(port, "/api/import", "application/json", r#"{"url":"https://x.test/steel"}"#);
+        assert!(st == 409 && body.contains("already imported"), "{st} {body}");
 
         // imports: must be JSON, and unresolvable links are reported, never written
         assert_eq!(post(port, "/api/import", "text/plain", "{}").0, 415);
