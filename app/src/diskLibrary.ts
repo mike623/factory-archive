@@ -5,14 +5,16 @@ import type { Blueprint, SourceId } from './data';
 
 export interface BlueprintMeta {
   source: string; sourceUrl?: string | null; title?: string | null; description?: string | null;
-  author?: string | null; category?: string | null; subcategory?: string | null; tags?: string[]; siteName?: string | null;
+  author?: string | null; tags?: string[]; siteName?: string | null;
   imageFile?: string | null; importedAt?: number;
 }
 export interface DiskFile {
   name: string; hasSbp: boolean; hasCfg: boolean; size: number; modified: number;
   key?: string | null; meta?: BlueprintMeta | null;
+  /** the game's own category / sub-category, read from the world's save */
+  category?: string | null; subcategory?: string | null;
 }
-interface DiskSession { name: string; blueprints: DiskFile[] }
+interface DiskSession { name: string; blueprints: DiskFile[]; categoriesError?: string | null }
 
 function hash(s: string) {
   let h = 2166136261;
@@ -31,8 +33,8 @@ export function toBlueprint(session: string, f: DiskFile): Blueprint {
     id: `disk:${session}/${f.name}`,
     name: f.name,
     source,
-    category: m?.category ?? '',
-    subcategory: m?.subcategory ?? undefined,
+    category: f.category ?? '',
+    subcategory: f.subcategory ?? undefined,
     tags: m?.tags ?? [],
     modded: false,
     materials: [],
@@ -57,12 +59,15 @@ export function toBlueprint(session: string, f: DiskFile): Blueprint {
 export function useDiskLibrary(root: string | null, refreshKey: unknown) {
   const [items, setItems] = useState<Blueprint[] | null>(null);
   const [sessions, setSessions] = useState<string[]>([]);
+  /** worlds whose save couldn't be read for categories */
+  const [categoryErrors, setCategoryErrors] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!isTauri() || !root) return;
     try {
       const list = await invoke<DiskSession[]>('library', { root });
       setSessions(list.map(s => s.name));
+      setCategoryErrors(list.filter(s => s.categoriesError).map(s => `${s.name}: ${s.categoriesError}`));
       setItems(list.flatMap(s => s.blueprints.filter(f => f.hasSbp).map(f => toBlueprint(s.name, f))));
     } catch (e) { console.error(e); setItems([]); }
   }, [root]);
@@ -75,5 +80,5 @@ export function useDiskLibrary(root: string | null, refreshKey: unknown) {
     return () => removeEventListener('focus', load);
   }, [load]);
 
-  return { items, sessions, reload: load };
+  return { items, sessions, categoryErrors, reload: load };
 }

@@ -16,7 +16,7 @@ import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  confirmAction, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint, setBlueprintCategory,
+  confirmAction, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
   type Outcome,
 } from './platform';
 import { useShare } from './share';
@@ -40,7 +40,8 @@ const DISK_DEMO: Blueprint[] = [
   // the first one previews an import from a web page: details + picture
   meta: i === 0 ? { source: 'scim', sourceUrl: 'https://satisfactory-calculator.com/en/blueprints/index/details/id/10327/name/SFS+Foundry+x3',
     title: 'SFS Foundry x3 — compact steel', description: 'Three foundries fed by a single manifold. Preview data for the browser.',
-    author: 'Preview Pioneer', category: 'Production', tags: ['Steel', 'Foundry', 'Compact'] } : null,
+    author: 'Preview Pioneer', tags: ['Steel', 'Foundry', 'Compact'] } : null,
+  category: i < 2 ? 'Production' : undefined, subcategory: i === 0 ? 'Steel' : undefined,
 })).map((b, i) => i === 0 ? { ...b, imageUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="#2b4a6b"/><stop offset="1" stop-color="#c97417"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/><text x="24" y="336" font-family="monospace" font-size="18" fill="#fff" opacity=".8">PREVIEW PICTURE</text></svg>') } : b);
 
@@ -113,10 +114,14 @@ export default function App() {
 
   const disk = useDiskLibrary(gameFolder.current?.path ?? null, share.imports.length);
   const items = disk.items ?? library;
+  // say once when a world's save couldn't be read for the game's categories
+  const categoryError = disk.categoryErrors.join('\n');
+  useEffect(() => {
+    if (categoryError) notices.push({ tone: 'warn', title: "Couldn't read blueprint categories from the save", detail: categoryError });
+  }, [categoryError]); // eslint-disable-line react-hooks/exhaustive-deps
   const metadata = items.some(b => !b.onDisk);
-  // for files on disk, tags / sources come from imported pages' details; categories are set in the app
+  // for files on disk, tags / sources come from imported pages' details; categories come from the world's save
   const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const allCategories = useMemo(() => categoryTree(items), [items]);
   const tagChoices = useMemo(() => metadata ? undefined : uniq(items.flatMap(b => b.tags)).slice(0, 40), [items, metadata]);
   const showSources = metadata || items.some(b => b.source !== 'local');
 
@@ -245,17 +250,6 @@ export default function App() {
     } catch (e) { notices.push({ tone: 'warn', title: `Couldn't delete ${b.name}`, detail: String(e) }); }
   };
 
-  const setCategory = async (b: Blueprint, category: string, subcategory: string) => {
-    if (b.onDisk && isTauri()) {
-      const root = gameFolder.current?.path;
-      if (!root || !b.session) throw new Error('Satisfactory folder not found');
-      await setBlueprintCategory(root, b.session, b.name, category, subcategory);
-      await disk.reload();
-    } else { // browser preview
-      setLibrary(l => l.map(x => x.id === b.id ? { ...x, category: category.trim(), subcategory: subcategory.trim() || undefined } : x));
-    }
-  };
-
   // friends' imports through the share page land in Import Queue too
   const lastShared = share.imports[0];
   useEffect(() => { if (lastShared) rememberImported([`disk:${lastShared.session}/${lastShared.name}`]); }, [lastShared]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -307,7 +301,6 @@ export default function App() {
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
               onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp} onDelete={deleteBp}
-              onSetCategory={setCategory} categories={allCategories}
               root={gameFolder.current?.path ?? null} />
           </main>
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>

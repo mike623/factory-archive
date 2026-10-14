@@ -52,7 +52,6 @@ pub struct PageMeta {
     pub image_url: Option<String>,
     pub site_name: Option<String>,
     pub author: Option<String>,
-    pub category: Option<String>,
     pub tags: Vec<String>,
 }
 
@@ -127,7 +126,7 @@ fn tags_named<'a>(html: &'a str, tag: &str) -> Vec<&'a str> {
     out
 }
 
-/// Read title / picture / description / author / category / tags from standard
+/// Read title / picture / description / author / tags from standard
 /// Open Graph, Twitter-card and `<meta name=…>` tags. No site-specific selectors.
 pub fn page_meta(html: &str, base: &Url) -> PageMeta {
     let mut m = PageMeta::default();
@@ -146,7 +145,6 @@ pub fn page_meta(html: &str, base: &Url) -> PageMeta {
             "twitter:image" | "twitter:image:src" | "image" if m.image_url.is_none() => m.image_url = Some(val),
             "og:site_name" => { m.site_name.get_or_insert(val); }
             "author" | "article:author" => { m.author.get_or_insert(val); }
-            "article:section" => { m.category.get_or_insert(val); }
             "article:tag" => if !m.tags.contains(&val) { m.tags.push(val) },
             "keywords" => { keywords.get_or_insert(val); }
             _ => {}
@@ -515,7 +513,6 @@ mod tests {
         assert_eq!(m.description.as_deref(), Some("Three foundries"));
         assert_eq!(m.image_url.as_deref(), Some("https://example.com/img/1.jpg"));
         assert_eq!(m.author.as_deref(), Some("Ficsit Fan"));
-        assert_eq!(m.category.as_deref(), Some("Production"));
         assert_eq!(m.tags, ["Steel", "Foundry", "Modular"]);
         assert_eq!(page_meta("<title>Only &#8211; title</title>", &base).title.as_deref(), Some("Only – title"));
         assert_eq!(image_ext(b"<html>"), None);

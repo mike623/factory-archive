@@ -28,7 +28,7 @@ export const EMPTY_FILTERS: Filters = { tags: [], category: null, subcategory: n
 
 export interface CategoryNode { name: string; count: number; subs: { name: string; count: number }[] }
 
-/** Category → sub-category tree with counts. Uncategorized ('') goes last; empty when nothing has a category. */
+/** Category → sub-category tree with counts. Undefined ('') goes last; empty when nothing has a category. */
 export function categoryTree(bps: Blueprint[]): CategoryNode[] {
   const tree = new Map<string, Map<string, number>>();
   for (const b of bps) {
@@ -271,7 +271,7 @@ export function FilterRail({ filters, setFilters, counts, session, onReset, meta
             const on = open && filters.subcategory === null;
             return (
               <div key={c.name || '__none__'}>
-                <TreeRow label={c.name || 'Uncategorized'} count={c.count} on={on} dim={!c.name}
+                <TreeRow label={c.name || 'Undefined'} count={c.count} on={on} dim={!c.name}
                   chevron={c.subs.length > 0 ? open : undefined} onClick={() => setCat(c.name)} />
                 {open && c.subs.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '2px 0 4px 13px',
                   paddingLeft: 8, borderLeft: '1px solid var(--border)' }}>

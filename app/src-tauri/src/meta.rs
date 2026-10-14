@@ -1,5 +1,5 @@
 //! Details about blueprints that the game files don't carry: where a blueprint came from,
-//! its page's title, description, author, category, tags and picture.
+//! its page's title, description, author, tags and picture.
 //!
 //! Stored in the app's data folder (never the game folder), keyed by a hash of the .sbp
 //! contents, so the details follow a blueprint when it's copied to another world or renamed.
@@ -23,9 +23,6 @@ pub struct BlueprintMeta {
     pub title: Option<String>,
     pub description: Option<String>,
     pub author: Option<String>,
-    pub category: Option<String>,
-    /// set by the user in the app, under `category`
-    pub subcategory: Option<String>,
     pub tags: Vec<String>,
     pub site_name: Option<String>,
     /// file name of the saved picture inside the store, e.g. "<key>.jpg"
@@ -88,8 +85,6 @@ impl MetaStore {
             title: m.title.clone(),
             description: m.description.clone(),
             author: m.author.clone(),
-            category: m.category.clone(),
-            subcategory: None,
             tags: m.tags.clone(),
             site_name: m.site_name.clone(),
             image_file: None,
@@ -111,14 +106,13 @@ impl MetaStore {
     }
 
     /// Replace a blueprint's page details and picture with freshly fetched ones.
-    /// The user's category / sub-category stay; the old picture stays if no new one was found.
+    /// The old picture stays if no new one was found.
     pub fn refresh(&self, key: &str, page: &PageMeta, image: Option<(&[u8], &str)>) -> Result<(), String> {
         let mut meta = self.load(key).ok_or("no stored details")?;
         meta.title = page.title.clone().or(meta.title);
         meta.description = page.description.clone().or(meta.description);
         meta.author = page.author.clone().or(meta.author);
         meta.site_name = page.site_name.clone().or(meta.site_name);
-        if meta.category.is_none() { meta.category = page.category.clone(); }
         if !page.tags.is_empty() { meta.tags = page.tags.clone(); }
         if let (Some(old), Some((_, ext))) = (&meta.image_file, image) {
             if *old != format!("{key}.{ext}") { let _ = fs::remove_file(self.dir.join(old)); }
@@ -132,23 +126,6 @@ impl MetaStore {
         if self.load(&k).is_none() {
             let _ = self.save(&k, &BlueprintMeta { source: "local".into(), imported_at: now(), ..Default::default() }, None);
         }
-    }
-
-    /// Set (or clear, with empty text) a blueprint's category and sub-category.
-    /// A sub-category needs a category. Other details are kept.
-    pub fn set_category(&self, sbp: &[u8], category: &str, subcategory: &str) -> Result<(), String> {
-        let clean = |s: &str| -> Result<Option<String>, String> {
-            let s = s.trim();
-            if s.chars().count() > 64 || s.chars().any(char::is_control) { return Err("Category names can be up to 64 characters.".into()); }
-            Ok((!s.is_empty()).then(|| s.to_string()))
-        };
-        let (category, subcategory) = (clean(category)?, clean(subcategory)?);
-        if category.is_none() && subcategory.is_some() { return Err("Choose a category for the sub-category.".into()); }
-        let k = key(sbp);
-        let mut meta = self.load(&k).unwrap_or_else(|| BlueprintMeta { source: "local".into(), imported_at: now(), ..Default::default() });
-        meta.category = category;
-        meta.subcategory = subcategory;
-        self.save(&k, &meta, None)
     }
 
     /// Key for a .sbp on disk, cached by size + modification time.
@@ -203,26 +180,13 @@ mod tests {
         assert!(store.load("../../etc/passwd").is_none());
         assert!(store.image_data_url("zz").is_none());
 
-        // categories: set, keep other details, clear; sub-category needs a category
-        store.set_category(b"SBP", " Production ", "Steel").unwrap();
-        let back = store.load(&k).unwrap();
-        assert_eq!((back.category.as_deref(), back.subcategory.as_deref()), (Some("Production"), Some("Steel")));
-        assert_eq!(back.title.as_deref(), Some("SFS Foundry x3"));
-        assert!(store.set_category(b"SBP", "", "Steel").is_err());
-        assert!(store.set_category(b"SBP", &"x".repeat(65), "").is_err());
-        store.set_category(b"SBP", "", "").unwrap();
-        assert_eq!(store.load(&k).unwrap().category, None);
-        store.set_category(b"NEW", "Power", "").unwrap();
-        assert_eq!(store.load(&key(b"NEW")).unwrap().source, "local");
-
-        // refetching page details keeps the user's category and swaps the picture
-        store.set_category(b"SBP", "Mine", "").unwrap();
+        // refetching page details swaps the picture
         store.save(&k, &BlueprintMeta { source_url: Some("https://x.test/1".into()), ..store.load(&k).unwrap() }, None).unwrap();
         assert_eq!(store.linked().len(), 1);
-        let page = PageMeta { title: Some("New title".into()), category: Some("Site".into()), ..Default::default() };
+        let page = PageMeta { title: Some("New title".into()), ..Default::default() };
         store.refresh(&k, &page, Some((b"\xFF\xD8\xFFjpg", "jpg"))).unwrap();
         let back = store.load(&k).unwrap();
-        assert_eq!((back.title.as_deref(), back.category.as_deref()), (Some("New title"), Some("Mine")));
+        assert_eq!(back.title.as_deref(), Some("New title"));
         assert_eq!(back.image_file, Some(format!("{k}.jpg")));
         assert!(!dir.join(format!("{k}.png")).exists());
         store.refresh(&k, &PageMeta::default(), None).unwrap();

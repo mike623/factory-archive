@@ -135,11 +135,6 @@ export async function confirmAction(message: string, title: string, okLabel: str
   return ask(message, { title, kind: 'warning', okLabel, cancelLabel: 'Cancel' });
 }
 
-/** Set a blueprint's category and sub-category (kept in the app's data folder). Empty text clears. */
-export async function setBlueprintCategory(root: string, session: string, name: string, category: string, subcategory: string): Promise<void> {
-  await invoke('set_category', { root, session, name, category, subcategory });
-}
-
 /** Re-read page details and pictures of every blueprint imported from a link. Game files are untouched. */
 export async function refetchDetails(): Promise<{ updated: number; failed: number }> {
   return invoke('refetch_details');

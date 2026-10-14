@@ -1,5 +1,6 @@
 mod blueprints;
 mod meta;
+mod sav;
 mod sbp;
 mod resolve;
 mod share;
@@ -127,15 +128,24 @@ fn sessions(state: tauri::State<'_, ShareState>, root: String) -> serde_json::Va
 
 /// Every blueprint on disk, grouped by world session (newest session first).
 #[tauri::command]
-fn library(store: tauri::State<'_, MetaStore>, root: String) -> Vec<LibSession> {
+fn library(store: tauri::State<'_, MetaStore>, cats: tauri::State<'_, sav::CategoryCache>, root: String) -> Vec<LibSession> {
     let root = PathBuf::from(root);
-    blueprints::list_sessions(&root).into_iter().map(|s| LibSession {
-        blueprints: s.blueprints.into_iter().map(|f| {
-            let key = f.has_sbp.then(|| store.key_for_file(&root.join(&s.name).join(format!("{}.sbp", f.name)))).flatten();
-            let meta = key.as_deref().and_then(|k| store.load(k));
-            LibFile { file: f, key, meta }
-        }).collect(),
-        name: s.name,
+    blueprints::list_sessions(&root).into_iter().map(|s| {
+        // the game keeps categories in the world's save; a save we can't read leaves them empty
+        let (categories, categories_error) = match cats.for_session(&root, &s.name) {
+            Ok(c) => (c, None),
+            Err(e) => (Default::default(), Some(e)),
+        };
+        LibSession {
+            blueprints: s.blueprints.into_iter().map(|f| {
+                let key = f.has_sbp.then(|| store.key_for_file(&root.join(&s.name).join(format!("{}.sbp", f.name)))).flatten();
+                let meta = key.as_deref().and_then(|k| store.load(k));
+                let (category, subcategory) = categories.get(&f.name).cloned().unzip();
+                LibFile { file: f, key, meta, category, subcategory }
+            }).collect(),
+            name: s.name,
+            categories_error,
+        }
     }).collect()
 }
 
@@ -147,12 +157,18 @@ struct LibFile {
     /// content fingerprint, used to look up details and the picture
     key: Option<String>,
     meta: Option<BlueprintMeta>,
+    /// the game's category / sub-category, from the world's save
+    category: Option<String>,
+    subcategory: Option<String>,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LibSession {
     name: String,
     blueprints: Vec<LibFile>,
+    /// why the world's save couldn't be read for categories
+    categories_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -229,13 +245,6 @@ fn delete_blueprint(root: String, session: String, name: String) -> Result<(), S
     trash::delete_all(&files).map_err(|e| format!("couldn't move it to the Trash: {e}"))
 }
 
-/// Set a blueprint's category and sub-category (stored in the app data folder, not the game's).
-#[tauri::command]
-fn set_category(store: tauri::State<'_, MetaStore>, root: String, session: String, name: String, category: String, subcategory: String) -> Result<(), String> {
-    let sbp = blueprints::read_file(&PathBuf::from(root), &session, &name, "sbp").map_err(|e| e.to_string())?;
-    store.set_category(&sbp, &category, &subcategory)
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LinkImport {
@@ -305,12 +314,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(ShareState::default())
+        .manage(sav::CategoryCache::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join("blueprint-meta");
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

@@ -70,7 +70,7 @@ Good to know:
 
 It doesn't depend on any site's page layout, and it never saves an HTML page as a blueprint. If no download is found (for example because the site needs a login), it says so and writes nothing. In that case, download the files in your browser and drop them on the app.
 
-Along with the files, the app saves the page's **picture, title, description, author, category, tags and link**, read from the page's standard link-preview tags. These are stored in the app's data folder, never in the game folder:
+Along with the files, the app saves the page's **picture, title, description, author, tags and link**, read from the page's standard link-preview tags. These are stored in the app's data folder, never in the game folder:
 - Windows: `%APPDATA%\com.factoryarchive.app\blueprint-meta\`
 - macOS: `~/Library/Application Support/com.factoryarchive.app/blueprint-meta/`
 

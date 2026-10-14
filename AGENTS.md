@@ -28,6 +28,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
   - `blueprints.rs`: blueprint files and world sessions.
   - `resolve.rs`: link import.
   - `meta.rs`: details and picture store.
+  - `sav.rs`: reads the game's blueprint categories from a world's `.sav` (read-only; never write saves).
   - `sbp.rs`: `.sbp`/`.sbpcfg` reader (size, cost, buildings, description). The layout is documented at the top of the file; keep its bounds checks and size validation.
   - `share.rs` + `share.html`: the LAN share server and the page it serves.
 - `design/`: the original Claude Design prototype. Treat it as reference, not code to edit.
@@ -55,6 +56,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 ## Game facts the code relies on
 
 - Blueprints are stored at `<LocalAppData>/FactoryGame/Saved/SaveGames/blueprints/<session>/<name>.sbp` (+ an optional `.sbpcfg`). On macOS, this is inside CrossOver bottles.
+- Blueprint categories / sub-categories live in the world's `.sav` (`mBlueprintCategoryRecords`), not in the blueprint files. Layout taken from public save parsers; check against a real save with `FA_SAMPLE_SAV`.
 - Blueprints belong to the **world** (the host's machine, or the server), not the player.
 - The game reads new files when a save **loads**. Reloading the save is enough; this was confirmed by the maintainer.
 - Autosaves are named `<session>_autosave_<n>.sav`. This is used to detect the current world and hasn't been verified against every game version.

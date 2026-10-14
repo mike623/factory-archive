@@ -17,26 +17,26 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io::Read;
 
-const CHUNK_TAG: u32 = 0x9E2A_83C1;
+pub(crate) const CHUNK_TAG: u32 = 0x9E2A_83C1;
 const MAX_BODY: usize = 64 * 1024 * 1024;
 
-struct Reader<'a> { b: &'a [u8], p: usize }
+pub(crate) struct Reader<'a> { pub(crate) b: &'a [u8], pub(crate) p: usize }
 
 impl<'a> Reader<'a> {
-    fn new(b: &'a [u8]) -> Self { Self { b, p: 0 } }
-    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+    pub(crate) fn new(b: &'a [u8]) -> Self { Self { b, p: 0 } }
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
         let end = self.p.checked_add(n).filter(|&e| e <= self.b.len()).ok_or("unexpected end of file")?;
         let s = &self.b[self.p..end];
         self.p = end;
         Ok(s)
     }
-    fn i32(&mut self) -> Result<i32, String> { Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
-    fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
-    fn u64(&mut self) -> Result<u64, String> { Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap())) }
-    fn f32(&mut self) -> Result<f32, String> { Ok(f32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
-    fn u8(&mut self) -> Result<u8, String> { Ok(self.take(1)?[0]) }
+    pub(crate) fn i32(&mut self) -> Result<i32, String> { Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    pub(crate) fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    pub(crate) fn u64(&mut self) -> Result<u64, String> { Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap())) }
+    pub(crate) fn f32(&mut self) -> Result<f32, String> { Ok(f32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    pub(crate) fn u8(&mut self) -> Result<u8, String> { Ok(self.take(1)?[0]) }
     /// Unreal FString: i32 length incl. NUL; negative = UTF-16.
-    fn fstring(&mut self) -> Result<String, String> {
+    pub(crate) fn fstring(&mut self) -> Result<String, String> {
         let n = self.i32()?;
         if n == 0 { return Ok(String::new()); }
         if n > 0 {
@@ -49,7 +49,7 @@ impl<'a> Reader<'a> {
             Ok(String::from_utf16_lossy(&u16s).trim_end_matches('\0').to_string())
         }
     }
-    fn count(&mut self, max: i32) -> Result<usize, String> {
+    pub(crate) fn count(&mut self, max: i32) -> Result<usize, String> {
         let n = self.i32()?;
         if n < 0 || n > max { return Err(format!("implausible count {n}")); }
         Ok(n as usize)
@@ -115,7 +115,7 @@ pub fn parse_sbp(bytes: &[u8]) -> Result<Breakdown, String> {
         let _recipe = r.fstring()?;
     }
 
-    let (buildings, buildings_error) = match read_body(&bytes[r.p..]).and_then(|body| count_buildings(&body)) {
+    let (buildings, buildings_error) = match read_body(&bytes[r.p..], MAX_BODY).and_then(|body| count_buildings(&body)) {
         Ok(b) => (b, None),
         Err(e) => (Vec::new(), Some(e)),
     };
@@ -123,7 +123,8 @@ pub fn parse_sbp(bytes: &[u8]) -> Result<Breakdown, String> {
     Ok(Breakdown { save_version, build, size, cost, buildings, total_buildings, buildings_error })
 }
 
-fn read_body(mut rest: &[u8]) -> Result<Vec<u8>, String> {
+/// Inflate the zlib chunks that follow a header (`.sbp` and `.sav` share this format).
+pub(crate) fn read_body(mut rest: &[u8], max: usize) -> Result<Vec<u8>, String> {
     let mut body = Vec::new();
     while !rest.is_empty() {
         let mut r = Reader::new(rest);
@@ -136,7 +137,7 @@ fn read_body(mut rest: &[u8]) -> Result<Vec<u8>, String> {
         let _c2 = r.u64()?;
         let _u2 = r.u64()?;
         if algo != 3 { return Err(format!("unsupported compression ({algo})")); }
-        if body.len() + uncompressed > MAX_BODY { return Err("blueprint body is too large".into()); }
+        if body.len().saturating_add(uncompressed) > max { return Err("file body is too large".into()); }
         let data = r.take(compressed)?;
         let mut out = Vec::with_capacity(uncompressed);
         flate2::read::ZlibDecoder::new(data).take(uncompressed as u64 + 1).read_to_end(&mut out).map_err(|e| e.to_string())?;
