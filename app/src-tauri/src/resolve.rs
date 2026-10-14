@@ -7,6 +7,10 @@
 //! - A web page is scanned for links that look like downloads; each is fetched and
 //!   kept only if it really comes back as a blueprint file (not HTML).
 //! If nothing qualifies, we say so and write nothing — never placeholder files.
+//!
+//! One verified exception: SCIM's `og:image` is only the site icon, so for SCIM pages the
+//! picture is the first image of the blueprint's screenshot carousel (`id="carouselBlueprint"`,
+//! checked against live pages in Oct 2026).
 
 use reqwest::blocking::{Client, Response};
 use std::io::Read;
@@ -168,6 +172,50 @@ pub fn page_meta(html: &str, base: &Url) -> PageMeta {
     }
     m.image_url = m.image_url.and_then(|u| base.join(&u).ok()).filter(|u| matches!(u.scheme(), "http" | "https")).map(|u| u.to_string());
     m
+}
+
+/// First screenshot in a SCIM blueprint page's carousel (`#carouselBlueprint .carousel-item img`).
+pub fn scim_carousel_image(html: &str, base: &Url) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let start = lower.find("id=\"carouselblueprint\"")?;
+    let item = start + lower[start..].find("carousel-item")?;
+    let img = tags_named(&html[item..], "img").into_iter().next()?;
+    let u = base.join(&attr(img, "src")?).ok()?;
+    matches!(u.scheme(), "http" | "https").then(|| u.to_string())
+}
+
+/// Page details for a source: standard tags, plus SCIM's carousel picture.
+fn details_from_html(html: &str, page: &Url, src: Source) -> PageMeta {
+    let mut m = page_meta(html, page);
+    if src == Source::Scim {
+        if let Some(u) = scim_carousel_image(html, page) { m.image_url = Some(u); }
+    }
+    m
+}
+
+/// The page's preview picture, if it is really an image (optional: failures give `None`).
+fn fetch_image(c: &Client, meta: &PageMeta, allow_private: bool) -> Option<(Vec<u8>, &'static str)> {
+    meta.image_url.as_deref()
+        .and_then(|u| Url::parse(u).ok())
+        .and_then(|u| fetch(c, &u, allow_private).ok())
+        .filter(|f| f.bytes.len() <= 10 * 1024 * 1024)
+        .and_then(|f| image_ext(&f.bytes).map(|ext| (f.bytes, ext)))
+}
+
+/// Re-read a blueprint page's details and picture, without downloading the blueprint again.
+pub fn page_details(url: &str) -> Result<(PageMeta, Option<(Vec<u8>, &'static str)>), String> {
+    page_details_with(url, false)
+}
+
+pub fn page_details_with(url: &str, allow_private: bool) -> Result<(PageMeta, Option<(Vec<u8>, &'static str)>), String> {
+    let src = detect_source(url).ok_or("not a web link")?;
+    let page = Url::parse(url.trim()).map_err(|_| "not a valid URL".to_string())?;
+    let c = client()?;
+    let f = fetch(&c, &page, allow_private)?;
+    if !f.is_html { return Err("the link is a file, not a page".into()); }
+    let meta = details_from_html(&String::from_utf8_lossy(&f.bytes), &page, src);
+    let image = fetch_image(&c, &meta, allow_private);
+    Ok((meta, image))
 }
 
 /// Image type from its first bytes; anything else (HTML error pages, SVG scripts…) is rejected.
@@ -386,7 +434,7 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
     } else {
         // a web page: try the links that look like downloads
         let html = String::from_utf8_lossy(&first.bytes).into_owned();
-        meta = page_meta(&html, &page);
+        meta = details_from_html(&html, &page, src);
         let mut last_err: Option<String> = None;
         for u in candidates(extract_links(&html, &page), &page) {
             match fetch(&c, &u, allow_private) {
@@ -416,12 +464,7 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
     let mut name = clean_name(stem(&file));
     if name.is_empty() { name = "Imported blueprint".into(); }
 
-    // the page's preview picture, if it is really an image (optional: failures are ignored)
-    let image = meta.image_url.as_deref()
-        .and_then(|u| Url::parse(u).ok())
-        .and_then(|u| fetch(&c, &u, allow_private).ok())
-        .filter(|f| f.bytes.len() <= 10 * 1024 * 1024)
-        .and_then(|f| image_ext(&f.bytes).map(|ext| (f.bytes, ext)));
+    let image = fetch_image(&c, &meta, allow_private);
 
     Ok(Resolved { name, sbp: sbp_bytes, cfg, source: src, url: page.to_string(), meta, image })
 }
@@ -480,6 +523,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_scim_carousel_picture() {
+        // shape of a SCIM details page (structure only, not copied content)
+        let html = r#"<meta name="og:image" content="https://x.test/favicon.png"><img src="/logo.png">
+            <div id="carouselBlueprint" class="carousel slide"><ol class="carousel-indicators"><li></li></ol>
+            <div class="carousel-inner"><div class="carousel-item active">
+            <img src="https://static.x.test/bp/abc-1.jpg?v=1" class="d-block w-100" alt="A &amp; B"></div>
+            <div class="carousel-item"><img src="/bp/abc-2.jpg"></div></div></div>"#;
+        let base = Url::parse("https://satisfactory-calculator.com/en/blueprints/index/details/id/1").unwrap();
+        assert_eq!(scim_carousel_image(html, &base).as_deref(), Some("https://static.x.test/bp/abc-1.jpg?v=1"));
+        assert_eq!(details_from_html(html, &base, Source::Scim).image_url.as_deref(), Some("https://static.x.test/bp/abc-1.jpg?v=1"));
+        assert_eq!(details_from_html(html, &base, Source::Direct).image_url.as_deref(), Some("https://x.test/favicon.png"));
+        assert_eq!(scim_carousel_image("<img src='/a.png'>", &base), None);
+    }
+
+    #[test]
     fn blocks_local_addresses_for_real_use() {
         assert!(resolve("http://127.0.0.1:1/x.sbp").unwrap_err().contains("local"));
         assert!(resolve("http://192.168.1.10/x.sbp").unwrap_err().contains("local"));
@@ -532,6 +590,11 @@ mod tests {
 
         let r = resolve_with(&format!("{base}/files/Bus.sbp"), true).unwrap();
         assert_eq!((r.name.as_str(), r.cfg.as_deref()), ("Bus", Some(&b"BUSCFG"[..])));
+
+        let (m, img) = page_details_with(&format!("{base}/details/1"), true).unwrap();
+        assert_eq!(m.title.as_deref(), Some("SFS Foundry x3"));
+        assert!(img.is_some());
+        assert!(page_details_with(&format!("{base}/files/Bus.sbp"), true).is_err());
 
         let e = resolve_with(&format!("{base}/details/2"), true).unwrap_err();
         assert!(e.contains("Couldn't find the .sbp download"), "{e}");

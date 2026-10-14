@@ -128,4 +128,9 @@ export async function setBlueprintCategory(root: string, session: string, name: 
   await invoke('set_category', { root, session, name, category, subcategory });
 }
 
+/** Re-read page details and pictures of every blueprint imported from a link. Game files are untouched. */
+export async function refetchDetails(): Promise<{ updated: number; failed: number }> {
+  return invoke('refetch_details');
+}
+
 export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);

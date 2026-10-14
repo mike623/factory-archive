@@ -253,6 +253,32 @@ async fn import_link(app: tauri::AppHandle, root: String, session: String, url: 
     .map_err(|e| e.to_string())?
 }
 
+#[derive(Serialize)]
+struct RefetchResult {
+    updated: usize,
+    failed: usize,
+}
+
+/// Re-read the page details and picture of every blueprint imported from a link.
+/// Only the app's data folder changes; the game's files are never touched.
+#[tauri::command]
+async fn refetch_details(app: tauri::AppHandle) -> Result<RefetchResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<MetaStore>();
+        let (mut updated, mut failed) = (0, 0);
+        // ponytail: one page at a time; parallelise if libraries get large
+        for (key, meta) in store.linked() {
+            let ok = meta.source_url.as_deref().ok_or_else(String::new)
+                .and_then(resolve::page_details)
+                .and_then(|(page, img)| store.refresh(&key, &page, img.as_ref().map(|(b, e)| (b.as_slice(), *e))));
+            match ok { Ok(()) => updated += 1, Err(e) => { failed += 1; eprintln!("couldn't refetch {key}: {e}"); } }
+        }
+        RefetchResult { updated, failed }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Pin friends' imports to a session (`None` = follow the detected current world).
 #[tauri::command]
 fn share_set_session(state: tauri::State<'_, ShareState>, name: Option<String>) -> Result<(), String> {
@@ -277,7 +303,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, import_files, import_bytes, copy_blueprints, rename_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, set_category, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

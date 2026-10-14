@@ -59,13 +59,15 @@ const footerBtn: CSSProperties = {
 };
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater, onRefetch, refetching }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
   theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState; share: ShareStateUI;
   /** blueprint-site sources only mean something for site metadata */
   showSources: boolean;
   updater: UpdaterState;
+  /** re-read page details and pictures of blueprints imported from links (desktop app only) */
+  onRefetch?: () => void; refetching?: boolean;
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
@@ -183,6 +185,11 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} style={footerBtn}>
             {theme === 'dark' ? <IcSun size={14} /> : <IcMoon size={14} />}
           </button>
+          {onRefetch && <button onClick={onRefetch} disabled={refetching}
+            title={refetching ? 'Refetching details…' : 'Refetch details and pictures for every blueprint imported from a link'}
+            aria-label="Refetch all blueprint details" style={footerBtn}>
+            <IcRefresh size={14} style={refetching ? { animation: 'spin 1s linear infinite' } : undefined} />
+          </button>}
         </div>
       </div>
       {folderError && <div role="alert" style={{ padding: '0 12px 10px', marginTop: -4, fontSize: 10.5, lineHeight: 1.4,

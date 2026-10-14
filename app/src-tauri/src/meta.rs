@@ -4,7 +4,7 @@
 //! Stored in the app's data folder (never the game folder), keyed by a hash of the .sbp
 //! contents, so the details follow a blueprint when it's copied to another world or renamed.
 
-use crate::resolve::Resolved;
+use crate::resolve::{PageMeta, Resolved};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -99,6 +99,33 @@ impl MetaStore {
         Ok(k)
     }
 
+    /// Every stored blueprint that came from a web page: `(key, details)`.
+    pub fn linked(&self) -> Vec<(String, BlueprintMeta)> {
+        let Ok(rd) = fs::read_dir(&self.dir) else { return Vec::new() };
+        rd.filter_map(|e| {
+            let name = e.ok()?.file_name().into_string().ok()?;
+            let k = name.strip_suffix(".json")?.to_string();
+            let m = self.load(&k)?;
+            (m.source_url.is_some() && m.source != "local").then_some((k, m))
+        }).collect()
+    }
+
+    /// Replace a blueprint's page details and picture with freshly fetched ones.
+    /// The user's category / sub-category stay; the old picture stays if no new one was found.
+    pub fn refresh(&self, key: &str, page: &PageMeta, image: Option<(&[u8], &str)>) -> Result<(), String> {
+        let mut meta = self.load(key).ok_or("no stored details")?;
+        meta.title = page.title.clone().or(meta.title);
+        meta.description = page.description.clone().or(meta.description);
+        meta.author = page.author.clone().or(meta.author);
+        meta.site_name = page.site_name.clone().or(meta.site_name);
+        if meta.category.is_none() { meta.category = page.category.clone(); }
+        if !page.tags.is_empty() { meta.tags = page.tags.clone(); }
+        if let (Some(old), Some((_, ext))) = (&meta.image_file, image) {
+            if *old != format!("{key}.{ext}") { let _ = fs::remove_file(self.dir.join(old)); }
+        }
+        self.save(key, &meta, image)
+    }
+
     /// Mark a locally added file, unless richer details are already stored for it.
     pub fn note_local(&self, sbp: &[u8]) {
         let k = key(sbp);
@@ -187,6 +214,19 @@ mod tests {
         assert_eq!(store.load(&k).unwrap().category, None);
         store.set_category(b"NEW", "Power", "").unwrap();
         assert_eq!(store.load(&key(b"NEW")).unwrap().source, "local");
+
+        // refetching page details keeps the user's category and swaps the picture
+        store.set_category(b"SBP", "Mine", "").unwrap();
+        store.save(&k, &BlueprintMeta { source_url: Some("https://x.test/1".into()), ..store.load(&k).unwrap() }, None).unwrap();
+        assert_eq!(store.linked().len(), 1);
+        let page = PageMeta { title: Some("New title".into()), category: Some("Site".into()), ..Default::default() };
+        store.refresh(&k, &page, Some((b"\xFF\xD8\xFFjpg", "jpg"))).unwrap();
+        let back = store.load(&k).unwrap();
+        assert_eq!((back.title.as_deref(), back.category.as_deref()), (Some("New title"), Some("Mine")));
+        assert_eq!(back.image_file, Some(format!("{k}.jpg")));
+        assert!(!dir.join(format!("{k}.png")).exists());
+        store.refresh(&k, &PageMeta::default(), None).unwrap();
+        assert_eq!(store.load(&k).unwrap().image_file, Some(format!("{k}.jpg")));
 
         // file keys are cached and follow content
         let f = dir.join("a.sbp");

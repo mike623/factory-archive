@@ -6,6 +6,9 @@ import { Thumb } from './components';
 
 const cache = new Map<string, Promise<string | null>>();
 
+/** Forget loaded pictures, e.g. after their details were refetched. */
+export const clearImageCache = () => cache.clear();
+
 function load(key: string) {
   let p = cache.get(key);
   if (!p) {
@@ -23,7 +26,7 @@ export function useBlueprintImage(bp: Blueprint) {
     let live = true;
     load(bp.imageKey).then(s => { if (live) setSrc(s); });
     return () => { live = false; };
-  }, [bp.imageKey, bp.imageUrl]);
+  }, [bp, bp.imageKey, bp.imageUrl]); // `bp` is a new object after each library reload, picking up refetched pictures
   return src;
 }
 

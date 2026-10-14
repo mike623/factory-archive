@@ -16,13 +16,14 @@ import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, renameBlueprint, setBlueprintCategory,
+  copyBlueprints, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint, setBlueprintCategory,
   type Outcome,
 } from './platform';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
 import { UpdateBanner } from './UpdateBanner';
 import { useUpdater } from './updater';
+import { clearImageCache } from './blueprintImage';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -180,6 +181,19 @@ export default function App() {
     disk.reload();
     return r;
   };
+  const [refetching, setRefetching] = useState(false);
+  const refetchAll = async () => {
+    setRefetching(true);
+    try {
+      const { updated, failed } = await refetchDetails();
+      clearImageCache();
+      await disk.reload();
+      if (!updated && !failed) notices.push({ tone: 'warn', title: 'Nothing to refetch', detail: 'Only blueprints imported from a link have pages to read.' });
+      if (updated) notices.push({ tone: 'ok', title: `Refetched ${updated} blueprint${updated === 1 ? '' : 's'}` });
+      if (failed) notices.push({ tone: 'warn', title: `${failed} couldn't be refetched`, detail: 'The page may be gone or the site unreachable. Their saved details were kept.' });
+    } catch (e) { notices.push({ tone: 'warn', title: "Couldn't refetch details", detail: String(e) }); }
+    setRefetching(false);
+  };
   const browseFiles = async () => {
     const paths = await pickBlueprintFiles();
     if (paths.length) addFiles((root, session) => importFiles(root, session, paths));
@@ -265,7 +279,8 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg)', position: 'relative' }}>
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
-        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={showSources} updater={updater} />
+        theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={showSources} updater={updater}
+        onRefetch={isTauri() ? refetchAll : undefined} refetching={refetching} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
