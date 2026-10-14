@@ -1,0 +1,98 @@
+name: Companion mod
+
+# Builds mod/FactoryArchiveLive and, for a `mod-v*` tag, publishes it to ficsit.app so it installs
+# through Satisfactory Mod Manager.
+#
+# Runs on a self-hosted Windows runner: the modding Unreal Engine (CSS) and Wwise are far bigger than
+# GitHub's hosted runners allow (see SML's "Linux CI" docs), and their licenses forbid sharing them.
+# The runner machine needs, installed once by hand:
+#   - the CSS engine, Visual Studio and Wwise, per https://docs.ficsit.app (Beginner's Guide, Dependencies)
+#   - the SML starter project, with Wwise integrated
+# Repository variables: UE_ROOT (engine folder), SML_PROJECT (starter project folder)
+# Repository secrets:   SMR_API_KEY (ficsit.app → profile → API keys), plus variable SMR_MOD_ID
+#
+# Security: this repo is public, so this workflow must never run on pull_request (fork code would run
+# on the runner machine). Only pushes, tags and manual runs, which need write access.
+
+on:
+  push:
+    branches: [main]
+    tags: ['mod-v*']
+    paths: ['mod/**', '.github/workflows/mod.yml']
+  workflow_dispatch:
+
+concurrency: companion-mod
+
+jobs:
+  build:
+    if: github.repository == 'mike623/factory-archive'
+    permissions:
+      contents: write
+    runs-on: [self-hosted, windows, satisfactory-modding]
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      UE_ROOT: ${{ vars.UE_ROOT }}
+      SML_PROJECT: ${{ vars.SML_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the mod version
+        if: startsWith(github.ref, 'refs/tags/mod-v')
+        run: |
+          $version = (Get-Content mod/FactoryArchiveLive/FactoryArchiveLive.uplugin -Raw | ConvertFrom-Json).SemVersion
+          $tag = "${{ github.ref_name }}".Substring(5)
+          if ($version -ne $tag) { throw "Tag $tag doesn't match SemVersion $version in the .uplugin" }
+
+      - name: Copy the mod into the starter project
+        run: |
+          if (-not $env:UE_ROOT -or -not $env:SML_PROJECT) { throw "Set the UE_ROOT and SML_PROJECT repository variables" }
+          $dest = Join-Path $env:SML_PROJECT 'Mods/FactoryArchiveLive'
+          robocopy mod/FactoryArchiveLive $dest /MIR /XD Binaries Intermediate Saved /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
+          $global:LASTEXITCODE = 0
+          Remove-Item (Join-Path $env:SML_PROJECT 'Saved/ArchivedPlugins/FactoryArchiveLive') -Recurse -Force -ErrorAction Ignore
+
+      - name: Build editor
+        run: |
+          & "$env:UE_ROOT/Engine/Build/BatchFiles/Build.bat" FactoryEditor Win64 Development -project="$env:SML_PROJECT/FactoryGame.uproject"
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+
+      - name: Package mod
+        run: |
+          & "$env:UE_ROOT/Engine/Build/BatchFiles/RunUAT.bat" -ScriptsForProject="$env:SML_PROJECT/FactoryGame.uproject" PackagePlugin -Project="$env:SML_PROJECT/FactoryGame.uproject" -dlcname=FactoryArchiveLive -merge -build -server -clientconfig=Shipping -serverconfig=Shipping -platform=Win64 -serverplatform=Win64+Linux -nocompileeditor -installed
+          if ($LASTEXITCODE -ne 0) { throw "Packaging failed" }
+          $zip = Get-ChildItem "$env:SML_PROJECT/Saved/ArchivedPlugins/FactoryArchiveLive/*.zip" | Select-Object -First 1
+          if (-not $zip) { throw "No packaged zip found" }
+          Copy-Item $zip.FullName FactoryArchiveLive.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FactoryArchiveLive
+          path: FactoryArchiveLive.zip
+
+      - name: Attach the zip to a GitHub release
+        if: startsWith(github.ref, 'refs/tags/mod-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Factory Archive Live ${{ github.ref_name }}
+          files: FactoryArchiveLive.zip
+          make_latest: false # the app's updater reads the latest release; keep that pointing at the app
+          prerelease: true
+          body: |
+            Companion mod: loads blueprints Factory Archive adds without reloading the save. Host or server only.
+            Manual install: install SML first, then extract this zip into `<game>/FactoryGame/Mods/` so that `Mods/FactoryArchiveLive/FactoryArchiveLive.uplugin` exists.
+
+      - name: Publish to ficsit.app
+        if: startsWith(github.ref, 'refs/tags/mod-v') && vars.SMR_MOD_ID != ''
+        env:
+          SMR_API_KEY: ${{ secrets.SMR_API_KEY }}
+          SMR_MOD_ID: ${{ vars.SMR_MOD_ID }}
+        run: |
+          if (-not $env:SMR_API_KEY) { throw "Set the SMR_API_KEY secret" }
+          Invoke-WebRequest https://github.com/satisfactorymodding/ficsit-cli/releases/download/v0.7.1/ficsit_windows_amd64.exe -OutFile ficsit.exe
+          ./ficsit.exe smr upload --api-key $env:SMR_API_KEY --stability beta --pretty=false $env:SMR_MOD_ID FactoryArchiveLive.zip "Release ${{ github.ref_name }}"
+          if ($LASTEXITCODE -ne 0) { throw "Upload to ficsit.app failed" }
+          Remove-Item ficsit.exe
