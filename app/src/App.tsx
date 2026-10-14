@@ -194,10 +194,13 @@ export default function App() {
   const refetchAll = async () => {
     setRefetching(true);
     try {
+      // rescan first: picks up blueprints other players added or the game saved meanwhile
+      const before = disk.items?.length ?? 0;
+      const added = (await disk.reload()) - before;
+      notices.push({ tone: 'ok', title: 'Library refreshed', detail: added > 0 ? `${added} new blueprint${added === 1 ? '' : 's'}` : 'No new blueprints' });
       const { updated, failed } = await refetchDetails();
       clearImageCache();
       await disk.reload();
-      if (!updated && !failed) notices.push({ tone: 'warn', title: 'Nothing to refetch', detail: 'Only blueprints imported from a link have pages to read.' });
       if (updated) notices.push({ tone: 'ok', title: `Refetched ${updated} blueprint${updated === 1 ? '' : 's'}` });
       if (failed) notices.push({ tone: 'warn', title: `${failed} couldn't be refetched`, detail: 'The page may be gone or the site unreachable. Their saved details were kept.' });
     } catch (e) { notices.push({ tone: 'warn', title: "Couldn't refetch details", detail: String(e) }); }

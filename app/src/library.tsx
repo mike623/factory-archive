@@ -186,8 +186,8 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             {theme === 'dark' ? <IcSun size={14} /> : <IcMoon size={14} />}
           </button>
           {onRefetch && <button onClick={onRefetch} disabled={refetching}
-            title={refetching ? 'Refetching details…' : 'Refetch details and pictures for every blueprint imported from a link'}
-            aria-label="Refetch all blueprint details" style={footerBtn}>
+            title={refetching ? 'Refreshing…' : 'Refresh: rescan the game folder for new blueprints, then refetch details and pictures of linked ones'}
+            aria-label="Refresh library" style={footerBtn}>
             <IcRefresh size={14} style={refetching ? { animation: 'spin 1s linear infinite' } : undefined} />
           </button>}
         </div>

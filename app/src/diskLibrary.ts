@@ -62,14 +62,17 @@ export function useDiskLibrary(root: string | null, refreshKey: unknown) {
   /** worlds whose save couldn't be read for categories */
   const [categoryErrors, setCategoryErrors] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
-    if (!isTauri() || !root) return;
+  /** Rescan the folder; resolves to the number of blueprints found. */
+  const load = useCallback(async (): Promise<number> => {
+    if (!isTauri() || !root) return 0;
     try {
       const list = await invoke<DiskSession[]>('library', { root });
       setSessions(list.map(s => s.name));
       setCategoryErrors(list.filter(s => s.categoriesError).map(s => `${s.name}: ${s.categoriesError}`));
-      setItems(list.flatMap(s => s.blueprints.filter(f => f.hasSbp).map(f => toBlueprint(s.name, f))));
-    } catch (e) { console.error(e); setItems([]); }
+      const next = list.flatMap(s => s.blueprints.filter(f => f.hasSbp).map(f => toBlueprint(s.name, f)));
+      setItems(next);
+      return next.length;
+    } catch (e) { console.error(e); setItems([]); return 0; }
   }, [root]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
