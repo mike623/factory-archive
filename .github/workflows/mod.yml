@@ -69,7 +69,7 @@ jobs:
           $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
           # Linux dedicated servers need Unreal's Linux cross-compile toolchain; its installer sets LINUX_MULTIARCH_ROOT.
           $servers = if ($env:LINUX_MULTIARCH_ROOT) { 'Win64+Linux' } else { Write-Warning 'No Linux toolchain on this runner: packaging without Linux server support'; 'Win64' }
-          & "$env:UE_ROOT/Engine/Build/BatchFiles/RunUAT.bat" -ScriptsForProject="$env:SML_PROJECT/FactoryGame.uproject" PackagePlugin -Project="$env:SML_PROJECT/FactoryGame.uproject" -dlcname=FactoryArchiveLive -merge -build -server -clientconfig=Shipping -serverconfig=Shipping -platform=Win64 -serverplatform=$servers -nocompileeditor -installed
+          & "$env:UE_ROOT/Engine/Build/BatchFiles/RunUAT.bat" -ScriptsForProject="$env:SML_PROJECT/FactoryGame.uproject" PackagePlugin -Project="$env:SML_PROJECT/FactoryGame.uproject" -dlcname=FactoryArchiveLive -merge -build -server -clientconfig=Shipping -serverconfig=Shipping -platform=Win64 "-serverplatform=$servers" -nocompileeditor -installed
           if ($LASTEXITCODE -ne 0) { throw "Packaging failed" }
           $zip = Get-ChildItem "$env:SML_PROJECT/Saved/ArchivedPlugins/FactoryArchiveLive/*.zip" | Select-Object -First 1
           if (-not $zip) { throw "No packaged zip found" }
