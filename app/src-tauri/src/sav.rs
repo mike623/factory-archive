@@ -29,7 +29,7 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 const MAX_SAVE_BODY: usize = 1 << 30;
-const PROP: &str = "mBlueprintCategoryRecords";
+pub(crate) const PROP: &str = "mBlueprintCategoryRecords";
 
 /// blueprint name → (category, sub-category)
 pub type Categories = HashMap<String, (String, String)>;
@@ -165,7 +165,7 @@ fn type_name(r: &mut Reader, depth: u32) -> Result<(String, String), String> {
 /// Does the tag at `p` (the category records) use the UE 5.4+ format? There the type name
 /// `ArrayProperty` is followed by its parameter count (1) and `StructProperty`; in the old format
 /// by the value size, an index of 0, and then `StructProperty`.
-fn is_v2(body: &[u8], p: usize) -> Result<bool, String> {
+pub(crate) fn is_v2(body: &[u8], p: usize) -> Result<bool, String> {
     let mut r = Reader::new(body);
     r.p = p;
     r.fstring()?;
@@ -221,7 +221,7 @@ impl CategoryCache {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
 
@@ -309,6 +309,32 @@ mod tests {
         body.extend(s("None"));
         body
     }
+
+    /// A save body laid out like the game's: i64 size, other data, then a level data blob
+    /// (i32 size, i32 0, i32 object count; per object i32 version, i32 flag, i32 size, data, i32 0)
+    /// whose second object holds `object`.
+    fn with_blob(object: &[u8]) -> Vec<u8> {
+        let mut objs = 2i32.to_le_bytes().to_vec();
+        for data in [&b"another object"[..], object] {
+            objs.extend(60i32.to_le_bytes());
+            objs.extend(0i32.to_le_bytes());
+            objs.extend((data.len() as i32).to_le_bytes());
+            objs.extend(data);
+            objs.extend(0i32.to_le_bytes());
+        }
+        let mut rest = b"grids and the table of contents".to_vec();
+        rest.extend((objs.len() as i32).to_le_bytes());
+        rest.extend(0i32.to_le_bytes());
+        rest.extend(objs);
+        rest.extend(b"destroyed actors");
+        let mut body = (rest.len() as i64).to_le_bytes().to_vec();
+        body.extend(rest);
+        body
+    }
+
+    /// a save with categories, for other modules' tests
+    pub(crate) fn synthetic_save(v2: bool) -> Vec<u8> { synthetic_sav("Steel Town", &with_blob(&game_state(v2))) }
+    pub(crate) fn synthetic_save_without_categories() -> Vec<u8> { synthetic_sav("Steel Town", &with_blob(b"no categories here")) }
 
     #[test]
     fn reads_categories_from_a_save() {

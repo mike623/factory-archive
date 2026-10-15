@@ -1,6 +1,7 @@
 mod blueprints;
 mod meta;
 mod sav;
+mod savedit;
 mod sbp;
 mod resolve;
 mod share;
@@ -239,6 +240,36 @@ fn rename_blueprint(root: String, session: String, from: String, to: String) -> 
     blueprints::rename(&PathBuf::from(root), &session, &from, &to).map_err(|e| e.to_string())
 }
 
+/// The game's categories in the world's newest save, in the game's order, with pending `edits`
+/// applied in memory (nothing is written), for the category editor.
+#[tauri::command]
+fn category_tree(root: String, session: String, edits: Vec<savedit::Edit>) -> Result<Vec<savedit::CategoryView>, String> {
+    check_category_edits(&session, &edits)?;
+    savedit::session_view(&PathBuf::from(root), &session, &edits)
+}
+
+fn check_category_edits(session: &str, edits: &[savedit::Edit]) -> Result<(), String> {
+    if !blueprints::valid_component(session) { return Err("invalid world name".into()); }
+    if edits.len() > 500 { return Err("too many changes at once".into()); }
+    for e in edits {
+        if let savedit::Edit::Move { blueprint, .. } = e {
+            if !blueprints::valid_component(blueprint) { return Err("invalid blueprint name".into()); }
+        }
+    }
+    Ok(())
+}
+
+/// Apply category changes by writing a new save next to the world's newest one (never overwriting).
+/// Returns the new save's file name, for the player to load.
+#[tauri::command]
+fn edit_categories(root: String, session: String, edits: Vec<savedit::Edit>) -> Result<String, String> {
+    check_category_edits(&session, &edits)?;
+    if edits.is_empty() { return Err("nothing to change".into()); }
+    // the library picks the new save up by itself: it's now the world's newest
+    let path = savedit::write_edited(&PathBuf::from(root), &session, &edits)?;
+    Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
 /// Move a blueprint's .sbp and .sbpcfg to the system Trash / Recycle Bin, so it can be restored.
 #[tauri::command]
 fn delete_blueprint(root: String, session: String, name: String) -> Result<(), String> {
@@ -331,7 +362,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

@@ -28,7 +28,8 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
   - `blueprints.rs`: blueprint files and world sessions.
   - `resolve.rs`: link import.
   - `meta.rs`: details and picture store.
-  - `sav.rs`: reads the game's blueprint categories from a world's `.sav` (read-only; never write saves).
+  - `sav.rs`: reads the game's blueprint categories from a world's `.sav` (read-only).
+  - `savedit.rs`: edits those categories by writing a **new** save next to the world's newest one. It never modifies an existing save.
   - `sbp.rs`: `.sbp`/`.sbpcfg` reader (size, cost, buildings, description). The layout is documented at the top of the file; keep its bounds checks and size validation.
   - `share.rs` + `share.html`: the LAN share server and the page it serves.
 - `design/`: the original Claude Design prototype. Treat it as reference, not code to edit.
@@ -46,17 +47,19 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 
 1. **Never write fake, placeholder or guessed data into the game folder.** If a download or parse can't be verified, report a clear error and write nothing. Sample data exists only in the browser preview.
 2. **Never overwrite** a blueprint file. `write_blueprint` refuses to, and callers should report "already exists".
-3. **Validate every name and path** that comes from the UI, the share page or the web: use `blueprints::valid_component`, and keep the rule that only `.sbp`/`.sbpcfg` files are read or written. Folders are opened only if they're directories (`open_folder`).
+3. **Validate every name and path** that comes from the UI, the share page or the web: use `blueprints::valid_component`, and keep the rule that only `.sbp`/`.sbpcfg` files are read or written (and `.sav` files, under rule 6). Folders are opened only if they're directories (`open_folder`).
 4. **Share server** (`share.rs`) has no authentication by design. Keep its protections intact: the Host-header check (DNS rebinding), JSON-only POSTs (CSRF), body size limits and path validation. Link imports from it must keep refusing local and private addresses (`resolve::host_allowed`).
 5. **Signing keys:** never print, log or commit `TAURI_SIGNING_PRIVATE_KEY` or its password. The public key lives in `tauri.conf.json` → `plugins.updater.pubkey`. Changing it breaks updates for installed copies unless the release secrets change to match.
-6. **Metadata** (pictures, page details) goes in the app data folder via `MetaStore`, never next to the game's files.
-7. Don't commit third-party blueprint files as fixtures; build synthetic ones in tests (see `sbp.rs`). To check against a real file, set `FA_SAMPLE_SBP`.
-8. Don't scrape site-specific markup you haven't verified. Link import relies only on HTTP facts (file names, `Content-Disposition`, content type) and standard link-preview tags.
+6. **Saves:** never modify or overwrite an existing `.sav`. Category edits go into a new save file (`savedit::write_edited`, `create_new`), and only after the new bytes read back as intended through `sav.rs`, the independent reader. Anything that doesn't add up is an error and nothing is written. Check changes against real saves with `FA_SAMPLE_SAV`.
+7. **Metadata** (pictures, page details) goes in the app data folder via `MetaStore`, never next to the game's files.
+8. Don't commit third-party blueprint files as fixtures; build synthetic ones in tests (see `sbp.rs`). To check against a real file, set `FA_SAMPLE_SBP`.
+9. Don't scrape site-specific markup you haven't verified. Link import relies only on HTTP facts (file names, `Content-Disposition`, content type) and standard link-preview tags.
 
 ## Game facts the code relies on
 
 - Blueprints are stored at `<LocalAppData>/FactoryGame/Saved/SaveGames/blueprints/<session>/<name>.sbp` (+ an optional `.sbpcfg`). On macOS, this is inside CrossOver bottles.
-- Blueprint categories / sub-categories live in the world's `.sav` (`mBlueprintCategoryRecords`), not in the blueprint files. Layout taken from public save parsers; check against a real save with `FA_SAMPLE_SAV`.
+- Blueprint categories / sub-categories live in the world's `.sav` (`mBlueprintCategoryRecords`), not in the blueprint files. Layout taken from public save parsers; check against a real save with `FA_SAMPLE_SAV`. Satisfactory 1.1+ writes the newer (UE 5.4) property tags; `sav.rs` reads both formats.
+- Whether the game loads a save edited by `savedit.rs` hasn't been confirmed in-game yet. The header's save-consistency hash is copied unchanged.
 - Blueprints belong to the **world** (the host's machine, or the server), not the player.
 - The game reads new files when a save **loads**. Reloading the save is enough; this was confirmed by the maintainer.
 - Autosaves are named `<session>_autosave_<n>.sav`. This is used to detect the current world and hasn't been verified against every game version.
