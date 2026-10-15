@@ -55,13 +55,18 @@ jobs:
           $global:LASTEXITCODE = 0
           Remove-Item (Join-Path $env:SML_PROJECT 'Saved/ArchivedPlugins/FactoryArchiveLive') -Recurse -Force -ErrorAction Ignore
 
+      # The engine's pre-build steps (SML's Wwise patches) run Windows PowerShell 5.1. Inheriting
+      # PowerShell 7's PSModulePath breaks its module autoload ("Set-ExecutionPolicy" not found,
+      # then "running scripts is disabled"), so hand child processes the machine's own path.
       - name: Build editor
         run: |
+          $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
           & "$env:UE_ROOT/Engine/Build/BatchFiles/Build.bat" FactoryEditor Win64 Development -project="$env:SML_PROJECT/FactoryGame.uproject"
           if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
       - name: Package mod
         run: |
+          $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
           & "$env:UE_ROOT/Engine/Build/BatchFiles/RunUAT.bat" -ScriptsForProject="$env:SML_PROJECT/FactoryGame.uproject" PackagePlugin -Project="$env:SML_PROJECT/FactoryGame.uproject" -dlcname=FactoryArchiveLive -merge -build -server -clientconfig=Shipping -serverconfig=Shipping -platform=Win64 -serverplatform=Win64+Linux -nocompileeditor -installed
           if ($LASTEXITCODE -ne 0) { throw "Packaging failed" }
           $zip = Get-ChildItem "$env:SML_PROJECT/Saved/ArchivedPlugins/FactoryArchiveLive/*.zip" | Select-Object -First 1
