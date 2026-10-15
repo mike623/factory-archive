@@ -3,7 +3,7 @@ import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetSt
 import { ALL_TAGS, GAME_VERSIONS, SOURCES, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn, Dot, SourceMark, Tag } from './components';
 import {
-  IcCheck, IcChevron, IcClock, IcCube, IcFile, IcFolder, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
+  IcCheck, IcClock, IcCube, IcLayers, IcFile, IcFolder, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
@@ -17,33 +17,34 @@ export interface Filters {
   tags: string[];
   /** '' = uncategorized */
   category: string | null;
-  /** only with `category`; '' = no sub-category */
-  subcategory: string | null;
   modded: boolean;
   paired: boolean;
   installed: boolean;
   version: string | null;
 }
-export const EMPTY_FILTERS: Filters = { tags: [], category: null, subcategory: null, modded: false, paired: false, installed: false, version: null };
+export const EMPTY_FILTERS: Filters = { tags: [], category: null, modded: false, paired: false, installed: false, version: null };
 
-export interface CategoryNode { name: string; count: number; subs: { name: string; count: number }[] }
+const byName = (a: string, b: string) => (!a ? 1 : !b ? -1 : a.localeCompare(b));
 
-/** Category → sub-category tree with counts. Undefined ('') goes last; empty when nothing has a category. */
-export function categoryTree(bps: Blueprint[]): CategoryNode[] {
-  const tree = new Map<string, Map<string, number>>();
-  for (const b of bps) {
-    const subs = tree.get(b.category) ?? new Map<string, number>();
-    subs.set(b.subcategory ?? '', (subs.get(b.subcategory ?? '') ?? 0) + 1);
-    tree.set(b.category, subs);
-  }
-  if (![...tree.keys()].some(Boolean)) return [];
-  const byName = (a: { name: string }, b: { name: string }) => (!a.name ? 1 : !b.name ? -1 : a.name.localeCompare(b.name));
-  return [...tree].map(([name, subs]) => ({
-    name,
-    count: [...subs.values()].reduce((n, c) => n + c, 0),
-    // the "no sub-category" bucket is only worth listing next to real ones
-    subs: [...subs.keys()].some(Boolean) ? [...subs].map(([name, count]) => ({ name, count })).sort(byName) : [],
-  })).sort(byName);
+/** Categories with counts, like the game's build-menu tabs. Undefined ('') goes last; empty when nothing has a category. */
+export function categoryCounts(bps: Blueprint[]): { name: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const b of bps) n.set(b.category, (n.get(b.category) ?? 0) + 1);
+  if (![...n.keys()].some(Boolean)) return [];
+  return [...n].map(([name, count]) => ({ name, count })).sort((a, b) => byName(a.name, b.name));
+}
+
+export interface BlueprintGroup { key: string; label: string | null; items: Blueprint[] }
+
+/** Sections for the grid: by category when showing all, by sub-category inside one. One unlabeled group when there's nothing to split by. */
+export function groupBlueprints(bps: Blueprint[], category: string | null): BlueprintGroup[] {
+  const keyOf = (b: Blueprint) => category === null ? b.category : b.subcategory ?? '';
+  const groups = new Map<string, Blueprint[]>();
+  for (const b of bps) groups.set(keyOf(b), [...(groups.get(keyOf(b)) ?? []), b]);
+  if (![...groups.keys()].some(Boolean)) return [{ key: '', label: null, items: bps }];
+  return [...groups.keys()].sort(byName).map(k => ({
+    key: k, label: k || (category === null ? 'Undefined' : 'No sub-category'), items: groups.get(k)!,
+  }));
 }
 
 const NAV: { id: NavId; label: string; icon: Icon }[] = [
@@ -198,6 +199,38 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
   );
 }
 
+/* ============ CATEGORY RAIL ============ */
+/** The game's blueprint categories as a vertical tab strip, like the in-game build menu. */
+export function CategoryRail({ categories, value, onChange }: {
+  categories: { name: string; count: number }[];
+  /** null = all */
+  value: string | null; onChange: (c: string | null) => void;
+}) {
+  const all = categories.reduce((n, c) => n + c.count, 0);
+  return (
+    <nav aria-label="Categories" style={{ width: 96, flexShrink: 0, background: 'var(--bg-deep)', borderRight: '1px solid var(--border)',
+      display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      {[{ name: null as string | null, count: all }, ...categories].map(c => {
+        const on = value === c.name;
+        const Ic = c.name === null ? IcLibrary : IcLayers;
+        const label = c.name === null ? 'All' : c.name || 'Undefined';
+        return (
+          <button key={c.name ?? '__all__'} onClick={() => onChange(c.name)} aria-pressed={on} title={`${label} · ${c.count}`}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 6px 12px',
+              background: on ? 'var(--accent)' : 'transparent', border: 'none', borderBottom: '1px solid var(--border-soft)',
+              color: on ? '#1a1206' : 'var(--text-dim)', transition: 'background .14s' }}>
+            <Ic size={24} sw={1.5} />
+            <span style={{ fontSize: 11.5, fontWeight: on ? 700 : 500, lineHeight: 1.2, textAlign: 'center', maxWidth: '100%',
+              overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              fontStyle: c.name === '' ? 'italic' : undefined }}>{label}</span>
+            <span className="mono" style={{ fontSize: 9.5, opacity: .65 }}>{c.count}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 /* ============ FILTER RAIL ============ */
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -218,19 +251,15 @@ export interface SessionFilter {
   onChange: (v: string | null) => void;
 }
 
-export function FilterRail({ filters, setFilters, counts, session, onReset, metadata, categories, tagOptions = ALL_TAGS }: {
+export function FilterRail({ filters, setFilters, counts, session, onReset, metadata, tagOptions = ALL_TAGS }: {
   filters: Filters; setFilters: Dispatch<SetStateAction<Filters>>; counts: { shown: number; total: number };
   session: SessionFilter; onReset: () => void;
   /** false when every blueprint comes from disk: hide filters only the sample data has (modded, version, install state) */
   metadata: boolean;
-  /** category tree of the blueprints in view */
-  categories: CategoryNode[];
   /** tag choices present in the library (from imported pages); defaults to the sample set */
   tagOptions?: string[];
 }) {
   const toggleTag = (t: string) => setFilters(f => ({ ...f, tags: f.tags.includes(t) ? f.tags.filter(x => x !== t) : [...f.tags, t] }));
-  const setCat = (c: string) => setFilters(f => ({ ...f, category: f.category === c ? null : c, subcategory: null }));
-  const setSub = (c: string, s: string) => setFilters(f => ({ ...f, category: c, subcategory: f.subcategory === s ? null : s }));
   const flip = (k: 'modded' | 'paired' | 'installed') => setFilters(f => ({ ...f, [k]: !f[k] }));
   return (
     <aside style={{ width: 236, flexShrink: 0, background: 'var(--bg)', borderRight: '1px solid var(--border)',
@@ -259,26 +288,6 @@ export function FilterRail({ filters, setFilters, counts, session, onReset, meta
                   padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--accent-line)' }}>CURRENT</span>}
                 <span className="mono" style={{ fontSize: 10, opacity: .6 }}>{o.count}</span>
               </button>
-            );
-          })}
-        </div>
-      </Section>}
-
-      {categories.length > 0 && <Section label="Category">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {categories.map(c => {
-            const open = filters.category === c.name;
-            const on = open && filters.subcategory === null;
-            return (
-              <div key={c.name || '__none__'}>
-                <TreeRow label={c.name || 'Undefined'} count={c.count} on={on} dim={!c.name}
-                  chevron={c.subs.length > 0 ? open : undefined} onClick={() => setCat(c.name)} />
-                {open && c.subs.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '2px 0 4px 13px',
-                  paddingLeft: 8, borderLeft: '1px solid var(--border)' }}>
-                  {c.subs.map(sc => <TreeRow key={sc.name || '__none__'} label={sc.name || 'No sub-category'} count={sc.count} small
-                    dim={!sc.name} on={filters.subcategory === sc.name} onClick={() => setSub(c.name, sc.name)} />)}
-                </div>}
-              </div>
             );
           })}
         </div>
@@ -320,26 +329,6 @@ export function FilterRail({ filters, setFilters, counts, session, onReset, meta
         </Btn>
       </div>
     </aside>
-  );
-}
-
-function TreeRow({ label, count, on, onClick, chevron, small, dim }: {
-  label: string; count: number; on: boolean; onClick: () => void;
-  /** expanded state; undefined = no children */
-  chevron?: boolean; small?: boolean; dim?: boolean;
-}) {
-  return (
-    <button onClick={onClick} aria-pressed={on} aria-expanded={chevron} style={{ display: 'flex', alignItems: 'center', gap: 6,
-      width: '100%', height: small ? 27 : 30, padding: '0 10px 0 6px', borderRadius: 'var(--r-sm)',
-      background: on ? 'var(--accent-ghost)' : 'transparent',
-      border: `1px solid ${on ? 'var(--accent-line)' : 'transparent'}`,
-      color: on ? 'var(--accent-bright)' : 'var(--text-dim)', fontSize: small ? 12 : 12.5, fontWeight: 500,
-      fontStyle: dim ? 'italic' : undefined, transition: 'all .14s' }}>
-      <span style={{ width: 12, display: 'flex', flexShrink: 0, opacity: .7 }}>
-        {chevron !== undefined && <IcChevron size={12} style={{ transform: chevron ? 'rotate(90deg)' : 'none', transition: 'transform .14s' }} />}</span>
-      <span style={{ flex: 1, minWidth: 0, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-      <span className="mono" style={{ fontSize: 10, opacity: .6 }}>{count}</span>
-    </button>
   );
 }
 

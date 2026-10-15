@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { powerTotal, SAMPLE_LIBRARY, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn } from './components';
 import { IcCopy, IcExport } from './icons';
-import { categoryTree, EMPTY_FILTERS, FilterRail, Sidebar, type Filters } from './library';
+import { CategoryRail, categoryCounts, EMPTY_FILTERS, FilterRail, groupBlueprints, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
 import { ExportDrawer, ImportModal, type LinkImport } from './modals';
@@ -66,7 +66,6 @@ function matches(b: Blueprint, query: string, source: SourceId | null, f: Filter
   }
   if (source && b.source !== source) return false;
   if (f.category !== null && b.category !== f.category) return false;
-  if (f.subcategory !== null && (b.subcategory ?? '') !== f.subcategory) return false;
   if (f.tags.length && !f.tags.every(t => b.tags.includes(t))) return false;
   if (f.modded && !b.modded) return false;
   if (f.paired && !b.files.sbpcfg) return false;
@@ -148,7 +147,7 @@ export default function App() {
   const filtered = useMemo(
     () => scoped.filter(b => matches(b, query, sourceFilter, filters, sessionFilter)).sort(SORTERS[sortKey]),
     [scoped, query, sourceFilter, filters, sessionFilter, sortKey]);
-  const categoryOptions = useMemo(() => categoryTree(scoped.filter(b => !sessionFilter || b.session === sessionFilter)),
+  const categoryOptions = useMemo(() => categoryCounts(scoped.filter(b => !sessionFilter || b.session === sessionFilter)),
     [scoped, sessionFilter]);
   const sessionIsEmpty = !!sessionFilter && !scoped.some(b => b.session === sessionFilter);
 
@@ -315,9 +314,11 @@ export default function App() {
               filterOpen={filterOpen} setFilterOpen={setFilterOpen} onImport={() => setImportOpen(true)}
               sortKey={sortKey} setSortKey={setSortKey} />}
             <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+              {!showEmpty && categoryOptions.length > 0 && <CategoryRail categories={categoryOptions} value={filters.category}
+                onChange={c => setFilters(f => ({ ...f, category: c }))} />}
               {!showEmpty && filterOpen && <FilterRail filters={filters} setFilters={setFilters}
                 counts={{ shown: filtered.length, total: scoped.length }} onReset={resetFilters} metadata={metadata}
-                categories={categoryOptions} tagOptions={tagChoices}
+                tagOptions={tagChoices}
                 session={{ options: sessionOptions, current: currentSession, value: sessionFilter, onChange: setSessionChoice }} />}
               <div className="grid-bg" style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: 'var(--bg)' }}>
                 {showEmpty
@@ -331,7 +332,7 @@ export default function App() {
                             hint="Save one with the Blueprint Designer in that world, or look at your other sessions."
                             onReset={() => setSessionChoice(null)} />
                         : <NoResults onReset={resetFilters} />
-                      : <LibraryBody title={sessionFilter ? `${NAV_TITLES[nav]} · ${sessionFilter}` : NAV_TITLES[nav]} bps={filtered} view={view} sel={sel} toggleSel={toggleSel}
+                      : <LibraryBody title={sessionFilter ? `${NAV_TITLES[nav]} · ${sessionFilter}` : NAV_TITLES[nav]} groups={groupBlueprints(filtered, filters.category)} view={view} sel={sel} toggleSel={toggleSel}
                           openDetail={b => setDetailId(b.id)} total={scoped.length} />}
               </div>
             </div>

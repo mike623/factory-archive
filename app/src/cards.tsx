@@ -1,6 +1,7 @@
 // cards.tsx — top bar, blueprint card/row, library body
 import { useState, type Ref } from 'react';
 import { dimsLabel, type Blueprint } from './data';
+import type { BlueprintGroup } from './library';
 import { Btn, Check, FilePair, IconBtn, MiniTag, ModdedBadge, SourceBadge, StatusPill } from './components';
 import { BlueprintImage } from './blueprintImage';
 import { IcChevron, IcClose, IcFilter, IcFolder, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
@@ -172,30 +173,51 @@ export function BlueprintRow({ bp, selected, onSelect, onOpen }: ItemProps) {
 }
 
 /* ============ LIBRARY BODY ============ */
-export function LibraryBody({ title, bps, view, sel, toggleSel, openDetail, total }: {
-  title: string; bps: Blueprint[]; view: ViewMode; sel: Set<string>;
+export function LibraryBody({ title, groups, view, sel, toggleSel, openDetail, total }: {
+  title: string; groups: BlueprintGroup[]; view: ViewMode; sel: Set<string>;
   toggleSel: (id: string) => void; openDetail: (b: Blueprint) => void; total: number;
 }) {
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const flip = (k: string) => setClosed(c => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const shown = groups.reduce((n, g) => n + g.items.length, 0);
+  const body = (bps: Blueprint[]) => view === 'grid'
+    ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(258px,1fr))', gap: 15 }}>
+        {bps.map(b => <BlueprintCard key={b.id} bp={b} selected={sel.has(b.id)}
+          onSelect={() => toggleSel(b.id)} onOpen={() => openDetail(b)} />)}
+      </div>
+    : <div>{bps.map(b => <BlueprintRow key={b.id} bp={b} selected={sel.has(b.id)}
+        onSelect={() => toggleSel(b.id)} onOpen={() => openDetail(b)} />)}</div>;
   return (
     <div style={{ padding: view === 'grid' ? '18px 20px 90px' : '0 0 90px' }}>
       {view === 'grid' && <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16, padding: '0 2px' }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>{title}</h2>
-        <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-mute)' }}>{bps.length} of {total} blueprints</span>
+        <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-mute)' }}>{shown} of {total} blueprints</span>
       </div>}
-      {view === 'grid'
-        ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(258px,1fr))', gap: 15 }}>
-            {bps.map(b => <BlueprintCard key={b.id} bp={b} selected={sel.has(b.id)}
-              onSelect={() => toggleSel(b.id)} onOpen={() => openDetail(b)} />)}
-          </div>
-        : <div>
-            <div style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 14, padding: '13px 14px',
-              borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 2 }}>
-              {['Blueprint', 'Tags', 'Source', 'Files', 'Status', ''].map((h, i) =>
-                <span key={i} className="tlabel" style={{ fontSize: 9 }}>{h}</span>)}
-            </div>
-            {bps.map(b => <BlueprintRow key={b.id} bp={b} selected={sel.has(b.id)}
-              onSelect={() => toggleSel(b.id)} onOpen={() => openDetail(b)} />)}
-          </div>}
+      {view === 'list' && <div style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 14, padding: '13px 14px',
+        borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 2 }}>
+        {['Blueprint', 'Tags', 'Source', 'Files', 'Status', ''].map((h, i) =>
+          <span key={i} className="tlabel" style={{ fontSize: 9 }}>{h}</span>)}
+      </div>}
+      {groups.map((g, i) => {
+        if (g.label === null) return <div key={g.key}>{body(g.items)}</div>;
+        const open = !closed.has(g.key);
+        return (
+          <section key={g.key} style={{ marginBottom: open && view === 'grid' ? 18 : 6 }}>
+            {/* numbered, collapsible section bar, like the game's build menu */}
+            <button onClick={() => flip(g.key)} aria-expanded={open} style={{ display: 'flex', alignItems: 'center', gap: 8,
+              width: '100%', height: 30, padding: '0 12px', marginBottom: open && view === 'grid' ? 12 : 0,
+              background: 'var(--panel)', border: 'none', borderRadius: view === 'grid' ? 'var(--r-sm)' : 0,
+              color: 'var(--text-dim)', fontSize: 13, fontWeight: 500, textAlign: 'left',
+              fontStyle: g.key ? undefined : 'italic' }}>
+              <IcChevron size={12} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .14s', opacity: .7 }} />
+              <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-mute)' }}>{i + 1}.</span>
+              <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.label}</span>
+              <span className="mono" style={{ fontSize: 10.5, opacity: .6 }}>{g.items.length}</span>
+            </button>
+            {open && body(g.items)}
+          </section>
+        );
+      })}
     </div>
   );
 }
