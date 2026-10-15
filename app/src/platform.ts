@@ -141,3 +141,31 @@ export async function refetchDetails(): Promise<{ updated: number; failed: numbe
 }
 
 export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);
+
+/* ---------- the game's blueprint categories (written as a new save, never over an existing one) ---------- */
+
+/** "" is the game's Undefined category / sub-category. */
+export interface CategoryView { name: string; subs: { name: string; blueprints: string[] }[] }
+export type CategoryEdit =
+  | { op: 'addCategory'; name: string }
+  | { op: 'renameCategory'; from: string; to: string }
+  | { op: 'deleteCategory'; name: string }
+  | { op: 'addSub'; category: string; name: string }
+  | { op: 'renameSub'; category: string; from: string; to: string }
+  | { op: 'deleteSub'; category: string; name: string }
+  | { op: 'move'; blueprint: string; category: string; sub: string };
+
+/** The world's categories with `edits` applied in memory. Nothing is written. */
+export async function categoryTree(root: string, session: string, edits: CategoryEdit[]): Promise<CategoryView[]> {
+  if (!isTauri()) {
+    if (edits.length) throw new Error('Editing categories works in the desktop app');
+    return [{ name: '', subs: [{ name: '', blueprints: [] }] }, { name: 'Production', subs: [{ name: 'Steel', blueprints: [] }] }];
+  }
+  return invoke<CategoryView[]>('category_tree', { root, session, edits });
+}
+
+/** Write the edits into a new save next to the world's newest one. Returns the new file's name. */
+export async function editCategories(root: string, session: string, edits: CategoryEdit[]): Promise<string> {
+  if (!isTauri()) throw new Error('Editing categories works in the desktop app');
+  return invoke<string>('edit_categories', { root, session, edits });
+}

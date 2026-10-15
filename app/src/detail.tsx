@@ -9,6 +9,7 @@ import {
 import { copyText, openExternal } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
 import { BreakdownSection, ConfigSwatch, useBlueprintInfo } from './breakdown';
+import { MoveControl, type CategoryEditsState } from './categoryEditor';
 
 const overlayChip = {
   fontSize: 10, padding: '4px 9px', borderRadius: 5, background: 'rgba(8,9,11,.7)',
@@ -126,8 +127,9 @@ function NameTitle({ bp, onRename }: { bp: Blueprint; onRename?: (b: Blueprint, 
   );
 }
 
-/** The game's category › sub-category for this blueprint (read-only). */
-function CategoryCard({ bp }: { bp: Blueprint }) {
+/** The game's category › sub-category for this blueprint, with a mover for blueprints in the editable world. */
+function CategoryCard({ bp, cats }: { bp: Blueprint; cats?: CategoryEditsState }) {
+  const editable = !!cats && bp.onDisk && bp.session === cats.session;
   return (
     <div>
       <div className="tlabel" style={{ marginBottom: 8 }}>Category</div>
@@ -136,19 +138,24 @@ function CategoryCard({ bp }: { bp: Blueprint }) {
         {bp.category || 'Undefined'}
         {bp.subcategory && <><IcChevron size={12} style={{ color: 'var(--text-mute)' }} />{bp.subcategory}</>}
       </div>
+      {editable && <MoveControl name={bp.name} cats={cats} />}
       {bp.onDisk && <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.45, color: 'var(--text-mute)' }}>
-        From the world's save. Change it in the game's blueprint menu; it shows here after the game saves.</div>}
+        {editable
+          ? 'From the world\'s save. A move is saved together with your other category changes, as a new save (Edit, under the categories).'
+          : 'From the world\'s save. Change it in the game\'s blueprint menu; it shows here after the game saves.'}</div>}
     </div>
   );
 }
 
-export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, onDelete, fav, onToggleFav, root = null }: {
+export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, onDelete, fav, onToggleFav, root = null, cats }: {
   bp: Blueprint; onBack: () => void; onExport: (b: Blueprint) => void; onOpenFolder: (b: Blueprint) => void;
   onRename?: (b: Blueprint, name: string) => Promise<void>;
   onDelete?: (b: Blueprint) => void;
   fav: boolean; onToggleFav: () => void;
   /** game blueprints folder, to read this blueprint's own files */
   root?: string | null;
+  /** queued category changes of the editable world */
+  cats?: CategoryEditsState;
 }) {
   const [active, setActive] = useState(0);
   const [images, setImages] = useState<Record<number, string>>({});
@@ -257,7 +264,7 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, 
                     {bp.status === 'installed' ? 'Re-export to folder' : bp.status === 'update' ? 'Update in folder' : 'Export to game folder'}</Btn>}
             </div>
 
-            <CategoryCard bp={bp} />
+            <CategoryCard bp={bp} cats={cats} />
 
             {(bp.dims || bp.power || bp.machines != null) && <div>
               <div className="tlabel" style={{ marginBottom: 11 }}>Specifications</div>

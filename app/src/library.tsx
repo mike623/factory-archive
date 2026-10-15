@@ -3,7 +3,7 @@ import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetSt
 import { ALL_TAGS, GAME_VERSIONS, SOURCES, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn, Dot, SourceMark, Tag } from './components';
 import {
-  IcCheck, IcClock, IcCube, IcLayers, IcFile, IcFolder, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
+  IcCheck, IcClock, IcCube, IcLayers, IcPencil, IcFile, IcFolder, IcFilter, IcInbox, IcLibrary, IcMoon, IcRefresh, IcStar, IcSun,
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
@@ -201,10 +201,14 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
 
 /* ============ CATEGORY RAIL ============ */
 /** The game's blueprint categories as a vertical tab strip, like the in-game build menu. */
-export function CategoryRail({ categories, value, onChange }: {
+export function CategoryRail({ categories, value, onChange, onEdit, pending = 0 }: {
   categories: { name: string; count: number }[];
   /** null = all */
   value: string | null; onChange: (c: string | null) => void;
+  /** opens the category editor (desktop app) */
+  onEdit?: () => void;
+  /** queued, unsaved category changes */
+  pending?: number;
 }) {
   const all = categories.reduce((n, c) => n + c.count, 0);
   return (
@@ -227,6 +231,12 @@ export function CategoryRail({ categories, value, onChange }: {
           </button>
         );
       })}
+      {onEdit && <button onClick={onEdit} title="Add, rename or delete categories" style={{ marginTop: 'auto', display: 'flex',
+        flexDirection: 'column', alignItems: 'center', gap: 5, padding: '12px 6px', background: 'transparent', border: 'none',
+        borderTop: '1px solid var(--border-soft)', color: pending ? 'var(--accent)' : 'var(--text-mute)', fontSize: 11 }}>
+        <IcPencil size={17} />
+        {pending ? `${pending} unsaved` : 'Edit'}
+      </button>}
     </nav>
   );
 }

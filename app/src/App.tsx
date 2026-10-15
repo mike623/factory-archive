@@ -24,6 +24,7 @@ import { ImportToasts } from './shareCard';
 import { UpdateBanner } from './UpdateBanner';
 import { useUpdater } from './updater';
 import { clearImageCache } from './blueprintImage';
+import { CategoryEditor, categoryOf, useCategoryEdits } from './categoryEditor';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -105,7 +106,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === 'Escape') { setImportOpen(false); setExportOpen(false); }
+      if (e.key === 'Escape') { setImportOpen(false); setExportOpen(false); setCatEditorOpen(false); }
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
@@ -128,6 +129,14 @@ export default function App() {
   const currentSession = share.sessions?.pinned ?? share.sessions?.detected?.name ?? null;
   const [sessionChoice, setSessionChoice] = useState<string | null | undefined>(undefined);
   const sessionFilter = sessionChoice === undefined ? currentSession : sessionChoice;
+
+  // the game's categories can be edited for one world at a time: the one in view, else the current save
+  const cats = useCategoryEdits(gameFolder.current?.path ?? null, sessionFilter ?? currentSession);
+  const [catEditorOpen, setCatEditorOpen] = useState(false);
+  // queued category changes show in the library before they're saved
+  const pending = useMemo(() => cats.edits.length && cats.view ? categoryOf(cats.view) : null, [cats.edits.length, cats.view]);
+  const libItems = useMemo(() => !pending ? items : items.map(b => b.onDisk && b.session === cats.session
+    ? { ...b, category: pending.get(b.name)?.[0] ?? '', subcategory: pending.get(b.name)?.[1] ?? '' } : b), [items, pending, cats.session]);
   const sessionOptions = useMemo(() => {
     const names = disk.items ? [...disk.sessions] : [...new Set(items.map(b => b.session).filter((s): s is string => !!s))];
     if (currentSession && !names.includes(currentSession)) names.unshift(currentSession);
@@ -137,12 +146,12 @@ export default function App() {
   // the nav picks the base set; search, session, source and filters narrow it
   const scoped = useMemo(() => {
     switch (nav) {
-      case 'import': return items.filter(b => imported.includes(b.id));
-      case 'recent': return [...items].sort(SORTERS.recent).slice(0, RECENT_LIMIT);
-      case 'favorites': return items.filter(b => favs.has(b.id));
-      default: return items;
+      case 'import': return libItems.filter(b => imported.includes(b.id));
+      case 'recent': return [...libItems].sort(SORTERS.recent).slice(0, RECENT_LIMIT);
+      case 'favorites': return libItems.filter(b => favs.has(b.id));
+      default: return libItems;
     }
-  }, [nav, items, imported, favs]);
+  }, [nav, libItems, imported, favs]);
 
   const filtered = useMemo(
     () => scoped.filter(b => matches(b, query, sourceFilter, filters, sessionFilter)).sort(SORTERS[sortKey]),
@@ -155,7 +164,7 @@ export default function App() {
     const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
   }), []);
   const selItems = useMemo(() => items.filter(b => sel.has(b.id)), [items, sel]);
-  const detailBp = detailId ? items.find(b => b.id === detailId) ?? null : null;
+  const detailBp = detailId ? libItems.find(b => b.id === detailId) ?? null : null;
 
   const resetFilters = () => { setFilters(EMPTY_FILTERS); setQuery(''); setSourceFilter(null); setSessionChoice(undefined); };
   const openBlueprintFolder = (b: Blueprint) => {
@@ -307,7 +316,7 @@ export default function App() {
             <BlueprintDetail bp={detailBp} onBack={() => setDetailId(null)}
               fav={favs.has(detailBp.id)} onToggleFav={() => toggleFav(detailBp.id)}
               onExport={b => { setSel(new Set([b.id])); setExportOpen(true); }} onOpenFolder={openBlueprintFolder} onRename={renameBp} onDelete={deleteBp}
-              root={gameFolder.current?.path ?? null} />
+              root={gameFolder.current?.path ?? null} cats={cats} />
           </main>
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {!showEmpty && <TopBar query={query} setQuery={setQuery} searchRef={searchRef} view={view} setView={setView}
@@ -315,7 +324,8 @@ export default function App() {
               sortKey={sortKey} setSortKey={setSortKey} />}
             <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
               {!showEmpty && categoryOptions.length > 0 && <CategoryRail categories={categoryOptions} value={filters.category}
-                onChange={c => setFilters(f => ({ ...f, category: c }))} />}
+                onChange={c => setFilters(f => ({ ...f, category: c }))}
+                onEdit={cats.session ? () => setCatEditorOpen(true) : undefined} pending={cats.edits.length} />}
               {!showEmpty && filterOpen && <FilterRail filters={filters} setFilters={setFilters}
                 counts={{ shown: filtered.length, total: scoped.length }} onReset={resetFilters} metadata={metadata}
                 tagOptions={tagChoices}
@@ -363,6 +373,11 @@ export default function App() {
           fontSize: 15, fontWeight: 600 }}>
           {importTarget ? <>Drop .sbp files to add them to <span style={{ color: 'var(--accent)' }}>{importTarget}</span></> : 'Pick a world session first'}
         </div></div>}
+      <CategoryEditor open={catEditorOpen} onClose={() => setCatEditorOpen(false)} cats={cats}
+        onWritten={file => {
+          notices.push({ tone: 'ok', title: `Saved as ${file}`, detail: 'Your other saves are unchanged. Close the world in the game if it\'s open, then load this save to see the new categories.' });
+          disk.reload();
+        }} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
         onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
         importLink={isTauri() ? importLink : undefined} findImported={isTauri() ? findImported : undefined} />
