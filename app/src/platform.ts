@@ -169,3 +169,9 @@ export async function editCategories(root: string, session: string, edits: Categ
   if (!isTauri()) throw new Error('Editing categories works in the desktop app');
   return invoke<string>('edit_categories', { root, session, edits });
 }
+
+/** Last report from the Factory Archive Live mod; null if it never ran with this folder. */
+export interface ModStatus { version: string; session: string; loaded: number; ageSecs: number }
+export async function modStatus(root: string): Promise<ModStatus | null> {
+  return isTauri() ? invoke<ModStatus | null>('mod_status', { root }) : null;
+}

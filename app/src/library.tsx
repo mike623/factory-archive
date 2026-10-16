@@ -1,5 +1,5 @@
 // library.tsx — sidebar + filter rail
-import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { ALL_TAGS, GAME_VERSIONS, SOURCES, type Blueprint, type NavId, type SourceId } from './data';
 import { Btn, Dot, SourceMark, Tag } from './components';
 import {
@@ -7,7 +7,7 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { openFolder, tailPath } from './platform';
+import { modStatus, openFolder, tailPath, type ModStatus } from './platform';
 import type { GameFolderState } from './gameFolder';
 import type { ShareStateUI } from './share';
 import type { UpdaterState } from './updater';
@@ -58,6 +58,41 @@ const footerBtn: CSSProperties = {
   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
   borderRadius: 'var(--r-sm)', background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)',
 };
+
+/* ============ LIVE MOD STATUS ============ */
+/** The mod rewrites its status file every 2 s while a world is loaded. */
+const MOD_FRESH_SECS = 10;
+
+function ago(secs: number) {
+  if (secs < 90) return `${secs} s ago`;
+  if (secs < 5400) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 129600) return `${Math.round(secs / 3600)} h ago`;
+  return `${Math.round(secs / 86400)} days ago`;
+}
+
+/** Hidden until the mod has run once with this folder. */
+function ModStatusRow({ root }: { root: string }) {
+  const [status, setStatus] = useState<ModStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const poll = () => modStatus(root).then(s => { if (alive) setStatus(s); }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, [root]);
+  if (!status) return null;
+  const running = status.ageSecs <= MOD_FRESH_SECS;
+  return (
+    <div role="status" title={running
+      ? `Factory Archive Live v${status.version} is running in "${status.session}". New blueprints appear in the game within a few seconds.\nLoaded ${status.loaded} so far.`
+      : `Factory Archive Live v${status.version} is installed but no world is loaded right now. Last seen in "${status.session}".`}
+      style={{ padding: '0 12px 10px', marginTop: -2, display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, color: 'var(--text-dim)' }}>
+      <Dot color={running ? 'var(--ok)' : 'var(--text-mute)'} />
+      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {running ? `Live mod running · ${status.session}` : `Live mod idle · seen ${ago(status.ageSecs)}`}</span>
+    </div>
+  );
+}
 
 /* ============ SIDEBAR ============ */
 export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater, onRefetch, refetching }: {
@@ -193,6 +228,7 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
           </button>}
         </div>
       </div>
+      {current && <ModStatusRow root={current.path} />}
       {folderError && <div role="alert" style={{ padding: '0 12px 10px', marginTop: -4, fontSize: 10.5, lineHeight: 1.4,
         color: 'var(--warn)' }}>{folderError}</div>}
     </aside>

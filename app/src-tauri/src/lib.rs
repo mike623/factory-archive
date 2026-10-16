@@ -348,6 +348,12 @@ fn share_status(state: tauri::State<'_, ShareState>) -> Option<ShareInfo> {
     state.status()
 }
 
+/// Whether the Factory Archive Live mod is running against this folder (see `blueprints::mod_status`).
+#[tauri::command]
+fn mod_status(root: String) -> Option<blueprints::ModStatus> {
+    blueprints::mod_status(&PathBuf::from(root))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -362,7 +368,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

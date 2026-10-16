@@ -303,6 +303,37 @@ pub fn files_of(root: &Path, session: &str, name: &str) -> Result<Vec<PathBuf>, 
     Ok([sbp, cfg].into_iter().filter(|p| p.is_file()).collect())
 }
 
+/// Status file the Factory Archive Live mod rewrites every few seconds while a world is loaded.
+pub const MOD_STATUS_FILE: &str = "FactoryArchiveLive.json";
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModStatus {
+    pub version: String,
+    /// world the mod is watching
+    pub session: String,
+    /// blueprints it loaded into the running world
+    pub loaded: u64,
+    /// seconds since the mod last wrote the file
+    pub age_secs: u64,
+}
+
+/// What the mod last reported, or None if it never ran with this folder.
+pub fn mod_status(root: &Path) -> Option<ModStatus> {
+    let path = root.join(MOD_STATUS_FILE);
+    let meta = fs::metadata(&path).ok()?;
+    if !meta.is_file() || meta.len() > 4096 { return None; }
+    let v: serde_json::Value = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
+    let text = |k: &str| v.get(k).and_then(|x| x.as_str()).filter(|s| s.len() <= 128).map(str::to_owned);
+    let age_secs = SystemTime::now().duration_since(meta.modified().ok()?).map(|d| d.as_secs()).unwrap_or(0);
+    Some(ModStatus {
+        version: text("version")?,
+        session: text("session")?,
+        loaded: v.get("loaded").and_then(|x| x.as_u64()).unwrap_or(0),
+        age_secs,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,6 +500,21 @@ mod tests {
         assert_eq!(rename(&root, "World", "Missing", "X"), Err(BpError::NotFound));
         assert_eq!(rename(&root, "World", "main bus", "../escape"), Err(BpError::BadName));
         assert_eq!(rename(&root, "World", "main bus", ""), Err(BpError::BadName));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn reads_mod_status() {
+        let root = tmp("modstatus");
+        assert_eq!(mod_status(&root), None);
+        fs::write(root.join(MOD_STATUS_FILE), r#"{"version":"0.1.1","session":"h22","loaded":3}"#).unwrap();
+        let s = mod_status(&root).unwrap();
+        assert_eq!((s.version.as_str(), s.session.as_str(), s.loaded), ("0.1.1", "h22", 3));
+        assert!(s.age_secs < 5);
+        fs::write(root.join(MOD_STATUS_FILE), "{half-written").unwrap();
+        assert_eq!(mod_status(&root), None);
+        fs::write(root.join(MOD_STATUS_FILE), "x".repeat(5000)).unwrap();
+        assert_eq!(mod_status(&root), None);
         fs::remove_dir_all(&root).ok();
     }
 }
