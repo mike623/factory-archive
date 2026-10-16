@@ -26,8 +26,11 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       go: ${{ steps.v.outputs.go }}
+      notes: ${{ steps.notes.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: v
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,6 +48,25 @@ jobs:
             echo "Releasing v$v"
             echo "go=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Release notes: commit subjects since the previous app release (minus version bumps).
+      # They become the release body and latest.json's notes, which the update banner shows.
+      - id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          prev=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq "[.[].tagName | select(startswith(\"v\") and . != \"v$V\")][0] // empty")
+          changes=""
+          if [ -n "$prev" ] && git rev-parse -q --verify "refs/tags/$prev" >/dev/null; then
+            changes=$(git log "$prev..HEAD" --no-merges --format='- %s' | grep -v -E '^- Release [0-9]' || true)
+          fi
+          {
+            echo 'notes<<NOTES_EOF'
+            if [ -n "$changes" ]; then echo "What's new:"; echo "$changes"; echo; fi
+            echo "Download the installer for your platform below. Installed copies update themselves."
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
   release:
     needs: plan
@@ -141,7 +163,7 @@ jobs:
           projectPath: app
           tagName: ${{ env.TAG }}
           releaseName: Factory Archive ${{ env.TAG }}
-          releaseBody: Download the installer for your platform below. Installed copies update themselves.
+          releaseBody: ${{ needs.plan.outputs.notes }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

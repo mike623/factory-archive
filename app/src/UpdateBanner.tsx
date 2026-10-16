@@ -1,9 +1,11 @@
 // UpdateBanner.tsx — "Update available" pill at the top of the window
+import { useState } from 'react';
 import type { UpdaterState } from './updater';
 import { Btn } from './components';
 import { IcClose, IcDownload, IcRefresh } from './icons';
 
 export function UpdateBanner({ u }: { u: UpdaterState }) {
+  const [showNotes, setShowNotes] = useState(false);
   if (!u.visible) return null;
   const busy = u.phase === 'downloading' || u.phase === 'ready';
   return (
@@ -21,10 +23,15 @@ export function UpdateBanner({ u }: { u: UpdaterState }) {
                 {u.phase === 'ready' && <span style={{ color: 'var(--text-mute)' }}> · restarting…</span>}</>
             : <>Version <strong className="mono">v{u.version}</strong> is available</>}
       </span>
+      {!busy && u.notes && u.phase !== 'error' && <button onClick={() => setShowNotes(v => !v)} aria-expanded={showNotes}
+        style={{ padding: 0, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, whiteSpace: 'nowrap' }}>What's new</button>}
       {!busy && <Btn variant="primary" size="sm" icon={IcDownload} onClick={u.install}>
         {u.phase === 'error' ? 'Try again' : 'Install & restart'}</Btn>}
       {!busy && <button onClick={u.dismiss} aria-label="Later" title="Later"
         style={{ display: 'flex', padding: 6, background: 'none', border: 'none', color: 'var(--text-mute)' }}><IcClose size={14} /></button>}
+      {showNotes && u.notes && <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, maxHeight: 260, overflowY: 'auto',
+        padding: '10px 14px', borderRadius: 11, background: 'var(--panel)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-lg)',
+        fontSize: 12, lineHeight: 1.5, color: 'var(--text-dim)', whiteSpace: 'pre-wrap' }}>{u.notes}</div>}
     </div>
   );
 }
