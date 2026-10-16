@@ -26,7 +26,7 @@ You need the [SML starter project](https://docs.ficsit.app/satisfactory-modding/
 
 ## CI and publishing
 
-`.github/workflows/mod.yml` builds the mod on every push to `main` that touches `mod/`. Pushing a `mod-v<SemVersion>` tag also uploads it to ficsit.app as a beta, so players can install it with Satisfactory Mod Manager. The tag must match `SemVersion` in the `.uplugin`.
+`.github/workflows/mod.yml` builds the mod on every push to `main` that touches `mod/`. Pushing a `mod-v<SemVersion>` tag also uploads it to ficsit.app as a beta, so players can install it with Satisfactory Mod Manager. Without SMM, download the zip and use **Install Live mod from zip…** in Factory Archive's sidebar (SML must be installed). The tag must match `SemVersion` in the `.uplugin`.
 
 It runs on a **self-hosted Windows runner**. GitHub's own runners are too small for the modding engine, and the engine's license doesn't allow putting it in a public image. One-time setup:
 

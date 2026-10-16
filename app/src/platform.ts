@@ -175,3 +175,20 @@ export interface ModStatus { version: string; session: string; loaded: number; a
 export async function modStatus(root: string): Promise<ModStatus | null> {
   return isTauri() ? invoke<ModStatus | null>('mod_status', { root }) : null;
 }
+
+export interface ModInstall { version: string; path: string; sml: boolean }
+/**
+ * Pick the Live mod's release zip and install it into the game: the Steam / Epic install found on this PC,
+ * or a folder the user picks. Null if cancelled.
+ */
+export async function installLiveMod(): Promise<ModInstall | null> {
+  if (!isTauri()) throw new Error('Installing the mod needs the desktop app.');
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const zip = await open({ title: 'Choose the Factory Archive Live zip', filters: [{ name: 'Mod zip', extensions: ['zip'] }] });
+  if (typeof zip !== 'string') return null;
+  const found = await invoke<string[]>('game_installs');
+  // ponytail: first install found wins; pick by hand for a second copy or a dedicated server
+  const game = found[0] ?? await open({ directory: true, title: 'Choose your Satisfactory install folder' });
+  if (typeof game !== 'string') return null;
+  return invoke<ModInstall>('install_live_mod', { zip, game });
+}

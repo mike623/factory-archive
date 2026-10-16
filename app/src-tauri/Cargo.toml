@@ -28,4 +28,5 @@ url = "2"
 sha2 = "0.10"
 base64 = "0.22"
 flate2 = "1"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 trash = "5"

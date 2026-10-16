@@ -7,8 +7,9 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { modStatus, openFolder, tailPath, type ModStatus } from './platform';
+import { installLiveMod, modStatus, openFolder, tailPath, type ModStatus } from './platform';
 import type { GameFolderState } from './gameFolder';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ShareStateUI } from './share';
 import type { UpdaterState } from './updater';
 import { ShareCard } from './shareCard';
@@ -70,9 +71,10 @@ function ago(secs: number) {
   return `${Math.round(secs / 86400)} days ago`;
 }
 
-/** Hidden until the mod has run once with this folder. */
+/** Live mod status (once it has run with this folder) and a button to install or update it from its zip. */
 function ModStatusRow({ root }: { root: string }) {
   const [status, setStatus] = useState<ModStatus | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => {
     let alive = true;
     const poll = () => modStatus(root).then(s => { if (alive) setStatus(s); }).catch(() => {});
@@ -80,16 +82,26 @@ function ModStatusRow({ root }: { root: string }) {
     const id = setInterval(poll, 5000);
     return () => { alive = false; clearInterval(id); };
   }, [root]);
-  if (!status) return null;
-  const running = status.ageSecs <= MOD_FRESH_SECS;
+  if (!isTauri()) return null;
+  const install = () => installLiveMod().then(r => r && setMsg({ ok: true, text: r.sml
+    ? `Installed v${r.version}. Restart the game to load it.`
+    : `Installed v${r.version}, but SML isn't installed. Install SML with Satisfactory Mod Manager, then restart the game.` }),
+    e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }));
+  const running = !!status && status.ageSecs <= MOD_FRESH_SECS;
   return (
-    <div role="status" title={running
-      ? `Factory Archive Live v${status.version} is running in "${status.session}". New blueprints appear in the game within a few seconds.\nLoaded ${status.loaded} so far.`
-      : `Factory Archive Live v${status.version} is installed but no world is loaded right now. Last seen in "${status.session}".`}
-      style={{ padding: '0 12px 10px', marginTop: -2, display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, color: 'var(--text-dim)' }}>
-      <Dot color={running ? 'var(--ok)' : 'var(--text-mute)'} />
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {running ? `Live mod running · ${status.session}` : `Live mod idle · seen ${ago(status.ageSecs)}`}</span>
+    <div style={{ padding: '0 12px 10px', marginTop: -2, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: 'var(--text-dim)' }}>
+      {status && <div role="status" title={running
+        ? `Factory Archive Live v${status.version} is running in "${status.session}". New blueprints appear in the game within a few seconds.\nLoaded ${status.loaded} so far.`
+        : `Factory Archive Live v${status.version} is installed but no world is loaded right now. Last seen in "${status.session}".`}
+        style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Dot color={running ? 'var(--ok)' : 'var(--text-mute)'} />
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {running ? `Live mod running · ${status.session}` : `Live mod idle · seen ${ago(status.ageSecs)}`}</span>
+      </div>}
+      <button onClick={install} title="Pick the FactoryArchiveLive.zip you downloaded; it goes into the game's Mods folder"
+        style={{ alignSelf: 'flex-start', padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10.5 }}>
+        {status ? 'Update Live mod from zip…' : 'Install Live mod from zip…'}</button>
+      {msg && <div role={msg.ok ? 'status' : 'alert'} style={{ color: msg.ok ? 'var(--ok)' : 'var(--warn)', lineHeight: 1.4 }}>{msg.text}</div>}
     </div>
   );
 }

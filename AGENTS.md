@@ -31,6 +31,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
   - `sav.rs`: reads the game's blueprint categories from a world's `.sav` (read-only).
   - `savedit.rs`: edits those categories by writing a **new** save next to the world's newest one. It never modifies an existing save.
   - `sbp.rs`: `.sbp`/`.sbpcfg` reader (size, cost, buildings, description). The layout is documented at the top of the file; keep its bounds checks and size validation.
+  - `modinstall.rs`: installs the Live mod from its release zip into the game's `Mods` folder.
   - `share.rs` + `share.html`: the LAN share server and the page it serves.
 - `design/`: the original Claude Design prototype. Treat it as reference, not code to edit.
 - `.github/workflows/`: `desktop-build.yml` (every push) and `release.yml` (releases).
@@ -47,7 +48,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 
 1. **Never write fake, placeholder or guessed data into the game folder.** If a download or parse can't be verified, report a clear error and write nothing. Sample data exists only in the browser preview.
 2. **Never overwrite** a blueprint file. `write_blueprint` refuses to, and callers should report "already exists".
-3. **Validate every name and path** that comes from the UI, the share page or the web: use `blueprints::valid_component`, and keep the rule that only `.sbp`/`.sbpcfg` files are read or written (and `.sav` files, under rule 6). The one exception is the Live mod's status file, `<blueprints>/FactoryArchiveLive.json`, which the app only reads (`blueprints::mod_status`, size-capped). Folders are opened only if they're directories (`open_folder`).
+3. **Validate every name and path** that comes from the UI, the share page or the web: use `blueprints::valid_component`, and keep the rule that only `.sbp`/`.sbpcfg` files are read or written (and `.sav` files, under rule 6). Exceptions: the Live mod's status file, `<blueprints>/FactoryArchiveLive.json`, which the app only reads (`blueprints::mod_status`, size-capped); and the Live mod installer (`modinstall.rs`), which writes only `<game>/FactoryGame/Mods/FactoryArchiveLive/` from a zip that passes its checks (our `.uplugin` at the root, a Win64 DLL, `enclosed_name` paths, size caps), unpacked into staging before it's swapped in. Folders are opened only if they're directories (`open_folder`).
 4. **Share server** (`share.rs`) has no authentication by design. Keep its protections intact: the Host-header check (DNS rebinding), JSON-only POSTs (CSRF), body size limits and path validation. Link imports from it must keep refusing local and private addresses (`resolve::host_allowed`).
 5. **Signing keys:** never print, log or commit `TAURI_SIGNING_PRIVATE_KEY` or its password. The public key lives in `tauri.conf.json` → `plugins.updater.pubkey`. Changing it breaks updates for installed copies unless the release secrets change to match.
 6. **Saves:** never modify or overwrite an existing `.sav`. Category edits go into a new save file (`savedit::write_edited`, `create_new`), and only after the new bytes read back as intended through `sav.rs`, the independent reader. Anything that doesn't add up is an error and nothing is written. Check changes against real saves with `FA_SAMPLE_SAV`.

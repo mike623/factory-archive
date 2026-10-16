@@ -1,5 +1,6 @@
 mod blueprints;
 mod meta;
+mod modinstall;
 mod sav;
 mod savedit;
 mod sbp;
@@ -322,6 +323,24 @@ fn mod_status(root: String) -> Option<blueprints::ModStatus> {
     blueprints::mod_status(&PathBuf::from(root))
 }
 
+/// Satisfactory installs (Steam, Epic) found on this PC, for installing the Live mod.
+#[tauri::command]
+fn game_installs() -> Vec<String> {
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let (Some(pf), Some(pd)) = (env("ProgramFiles(x86)"), env("ProgramData")) else { return Vec::new() };
+    modinstall::find_games(&pf, &pd).into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
+}
+
+/// Install or update the Live mod from its release zip into the game at `game`.
+#[tauri::command]
+fn install_live_mod(zip: String, game: String) -> Result<modinstall::Installed, String> {
+    let zip = PathBuf::from(zip);
+    if !zip.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) { return Err("Pick the mod's .zip file.".into()); }
+    let meta = std::fs::metadata(&zip).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > 512 << 20 { return Err("Pick the mod's .zip file.".into()); }
+    modinstall::install(&std::fs::read(&zip).map_err(|e| e.to_string())?, &PathBuf::from(game))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -336,7 +355,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, install_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }
