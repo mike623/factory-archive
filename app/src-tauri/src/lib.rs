@@ -239,6 +239,22 @@ fn edit_categories(root: String, session: String, edits: Vec<savedit::Edit>) -> 
     Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
 }
 
+/// The account save folders on this PC (Steam / Epic IDs), and which one holds the world's newest save.
+#[tauri::command]
+fn save_accounts(root: String, session: String) -> Result<Vec<savedit::Account>, String> {
+    if !blueprints::valid_component(&session) { return Err("invalid world name".into()); }
+    Ok(savedit::accounts(&PathBuf::from(root), &session))
+}
+
+/// Copy the world's newest save into another account's save folder (never overwriting).
+/// Returns the copied file's name.
+#[tauri::command]
+fn copy_save_to_account(root: String, session: String, account: String) -> Result<String, String> {
+    if !blueprints::valid_component(&session) { return Err("invalid world name".into()); }
+    let path = savedit::copy_to_account(&PathBuf::from(root), &session, &account)?;
+    Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
 /// Move a blueprint's .sbp and .sbpcfg to the system Trash / Recycle Bin, so it can be restored.
 #[tauri::command]
 fn delete_blueprint(root: String, session: String, name: String) -> Result<(), String> {
@@ -389,7 +405,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

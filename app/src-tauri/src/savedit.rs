@@ -629,6 +629,50 @@ pub fn write_edited(root: &Path, session: &str, edits: &[Edit]) -> Result<PathBu
     Ok(dest)
 }
 
+/// A per-account save folder: `SaveGames/<account id>`, where the id is the Steam ID (digits)
+/// or Epic ID (hex). Anything else in `SaveGames` (`blueprints`, …) isn't one.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Account { pub id: String, pub has_world: bool }
+
+fn account_id(s: &str) -> bool { s.len() >= 8 && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit()) }
+
+/// The account folders next to `root` (the `blueprints` folder), and which holds `session`'s newest save.
+pub fn accounts(root: &Path, session: &str) -> Vec<Account> {
+    let Some(save_games) = root.parent() else { return Vec::new() };
+    let from = sav::latest_save(root, session).and_then(|p| p.parent().map(Path::to_path_buf));
+    let mut out: Vec<Account> = fs::read_dir(save_games).into_iter().flatten().flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|id| account_id(id))
+        .map(|id| Account { has_world: from.as_deref() == Some(save_games.join(&id).as_path()), id })
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// Copy `session`'s newest save, byte for byte, into another account's save folder on this PC, so
+/// that account can load it. Never overwrites: if a save with that name is there, nothing is written.
+pub fn copy_to_account(root: &Path, session: &str, account: &str) -> Result<PathBuf, String> {
+    if !account_id(account) { return Err("That isn't an account save folder.".into()); }
+    let dir = root.parent().ok_or("No save folder")?.join(account);
+    if !dir.is_dir() { return Err("That account has no save folder on this PC. Start the game once with it, then try again.".into()); }
+    let src = sav::latest_save(root, session).ok_or_else(|| format!("No save found for the world \"{session}\""))?;
+    if src.parent() == Some(dir.as_path()) { return Err("This world's newest save is already in that account.".into()); }
+    let bytes = fs::read(&src).map_err(|e| e.to_string())?;
+    // the copy must still be this world's save; latest_save only read the header
+    if sav::session_name(&bytes).as_deref() != Some(session) { return Err("The save changed while copying; nothing was written.".into()); }
+    let dest = dir.join(src.file_name().ok_or("No save found")?);
+    let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&dest)
+        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { format!("{} already exists in that account.", dest.file_name().unwrap_or_default().to_string_lossy()) } else { e.to_string() })?;
+    if let Err(e) = f.write_all(&bytes).and_then(|_| f.sync_all()) {
+        drop(f);
+        let _ = fs::remove_file(&dest);
+        return Err(e.to_string());
+    }
+    Ok(dest)
+}
+
 /// Categories of the session's newest save with `edits` applied in memory (nothing is written), for the editor.
 pub fn session_view(root: &Path, session: &str, edits: &[Edit]) -> Result<Vec<CategoryView>, String> {
     let Some(src) = sav::latest_save(root, session) else { return Ok(Vec::new()) };
@@ -724,6 +768,29 @@ mod tests {
         assert_ne!(out, acct.join("Steel Town_autosave_0.sav"));
         assert_eq!(fs::read(acct.join("Steel Town_autosave_0.sav")).unwrap(), original);
         assert_eq!(session_view(&root, "Steel Town", &[]).unwrap().iter().filter(|c| c.name == "Energy").count(), 1);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn copies_a_world_to_another_account_without_overwriting() {
+        let base = std::env::temp_dir().join(format!("fa-savecopy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (root, a, b) = (base.join("blueprints"), base.join("76561198000000001"), base.join("76561198000000002"));
+        for d in [&root, &a, &b, &base.join("common")] { fs::create_dir_all(d).unwrap(); }
+        let original = sav::tests::synthetic_save(true);
+        fs::write(a.join("Steel Town_autosave_0.sav"), &original).unwrap();
+        let ids = accounts(&root, "Steel Town");
+        assert_eq!(ids, vec![Account { id: "76561198000000001".into(), has_world: true }, Account { id: "76561198000000002".into(), has_world: false }]);
+        let out = copy_to_account(&root, "Steel Town", "76561198000000002").unwrap();
+        assert_eq!(out, b.join("Steel Town_autosave_0.sav"));
+        assert_eq!(fs::read(&out).unwrap(), original);
+        assert!(copy_to_account(&root, "Steel Town", "76561198000000002").is_err(), "already exists / already there");
+        assert!(copy_to_account(&root, "Steel Town", "76561198000000001").is_err(), "newest save is in a now");
+        assert!(copy_to_account(&root, "Steel Town", "../x").is_err());
+        assert!(copy_to_account(&root, "Steel Town", "common").is_err());
+        assert!(copy_to_account(&root, "Steel Town", "aaaaaaaaaaaa").is_err(), "no such folder");
+        assert!(copy_to_account(&root, "Nope", "76561198000000002").is_err());
+        assert_eq!(fs::read(a.join("Steel Town_autosave_0.sav")).unwrap(), original);
         let _ = fs::remove_dir_all(&base);
     }
 

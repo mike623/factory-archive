@@ -29,7 +29,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
   - `resolve.rs`: link import.
   - `meta.rs`: details and picture store.
   - `sav.rs`: reads the game's blueprint categories from a world's `.sav` (read-only).
-  - `savedit.rs`: edits those categories by writing a **new** save next to the world's newest one. It never modifies an existing save.
+  - `savedit.rs`: edits those categories by writing a **new** save next to the world's newest one. It also copies a world's newest save, byte for byte, into another account's folder (`SaveGames/<Steam or Epic ID>/`) on the same PC. It never modifies or overwrites an existing save.
   - `sbp.rs`: `.sbp`/`.sbpcfg` reader (size, cost, buildings, description). The layout is documented at the top of the file; keep its bounds checks and size validation.
   - `modinstall.rs`: installs the Live mod from its release zip into the game's `Mods` folder.
   - `share.rs` + `share.html`: the LAN share server and the page it serves.

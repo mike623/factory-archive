@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Btn, IconBtn } from './components';
 import { IcCheck, IcClose, IcLayers, IcPencil, IcPlus, IcTrash, IcWarn } from './icons';
-import { categoryTree, editCategories, type CategoryEdit, type CategoryView } from './platform';
+import { categoryTree, copySaveToAccount, editCategories, saveAccounts, type CategoryEdit, type CategoryView, type SaveAccount } from './platform';
 
 export function useCategoryEdits(root: string | null, session: string | null) {
   const [edits, setEdits] = useState<CategoryEdit[]>([]);
@@ -42,7 +42,7 @@ export function useCategoryEdits(root: string | null, session: string | null) {
     } finally { setBusy(false); }
   }, [root, session, edits]);
 
-  return { session, view, edits, error, busy, load, add, discard, write };
+  return { root, session, view, edits, error, busy, load, add, discard, write };
 }
 export type CategoryEditsState = ReturnType<typeof useCategoryEdits>;
 
@@ -152,6 +152,8 @@ export function CategoryEditor({ open, onClose, cats, onWritten }: {
           {err && <div role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--warn)' }}>{err}</div>}
         </div>
 
+        <AccountCopy root={cats.root} session={cats.session} />
+
         <div style={{ padding: '13px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 8, fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-mute)' }}>
             <IcWarn size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--warn)' }} />
@@ -193,6 +195,37 @@ export function MoveControl({ name, cats }: { name: string; cats: CategoryEditsS
         </select>
       </div>
       {err && <div role="alert" style={{ fontSize: 11.5, color: 'var(--warn)' }}>{err}</div>}
+    </div>
+  );
+}
+
+/** Copy the world's newest save into another account's save folder on this PC (e.g. a second Steam account). */
+function AccountCopy({ root, session }: { root: string | null; session: string | null }) {
+  const [accounts, setAccounts] = useState<SaveAccount[]>([]);
+  const [target, setTarget] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    setMsg(null);
+    if (!root || !session) return setAccounts([]);
+    saveAccounts(root, session).then(a => { setAccounts(a); setTarget(a.find(x => !x.hasWorld)?.id ?? ''); }, () => setAccounts([]));
+  }, [root, session]);
+  const others = accounts.filter(a => !a.hasWorld);
+  if (!root || !session || !accounts.some(a => a.hasWorld) || !others.length) return null;
+  const copy = () => copySaveToAccount(root, session, target).then(
+    file => setMsg({ ok: true, text: `Copied ${file}. Sign in to the game with that account and load it.` }),
+    e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }));
+  return (
+    <div style={{ padding: '11px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600 }}>Copy to another account</div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <select aria-label="Account" value={target} onChange={e => setTarget(e.target.value)} style={{ ...field, flex: 1 }} className="mono">
+          {others.map(a => <option key={a.id} value={a.id}>{a.id}</option>)}
+        </select>
+        <Btn variant="ghost" size="sm" disabled={!target} onClick={copy}>Copy save</Btn>
+      </div>
+      <div style={{ fontSize: 11.5, lineHeight: 1.45, color: msg ? (msg.ok ? 'var(--accent)' : 'var(--warn)') : 'var(--text-mute)' }} role={msg ? 'status' : undefined}>
+        {msg?.text ?? 'Copies this world\'s newest save to another Steam or Epic account on this PC. The game may give that account a new pioneer, without your inventory.'}
+      </div>
     </div>
   );
 }

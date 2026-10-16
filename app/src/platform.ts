@@ -210,3 +210,15 @@ export async function uninstallLiveMod(game: string): Promise<boolean> {
   await invoke('uninstall_live_mod', { game });
   return true;
 }
+
+/* ---------- moving a world to another Steam / Epic account on this PC ---------- */
+
+export interface SaveAccount { id: string; hasWorld: boolean }
+/** Account save folders on this PC, and which one holds the world's newest save. */
+export async function saveAccounts(root: string, session: string): Promise<SaveAccount[]> {
+  return isTauri() ? invoke<SaveAccount[]>('save_accounts', { root, session }) : [];
+}
+/** Copy the world's newest save into `account`'s save folder. Returns the file's name. */
+export async function copySaveToAccount(root: string, session: string, account: string): Promise<string> {
+  return invoke<string>('copy_save_to_account', { root, session, account });
+}
