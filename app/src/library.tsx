@@ -7,7 +7,7 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { installLiveMod, liveModState, modStatus, openFolder, tailPath, type LiveModState, type ModStatus } from './platform';
+import { installLiveMod, liveModState, uninstallLiveMod, modStatus, openFolder, tailPath, type LiveModState, type ModStatus } from './platform';
 import type { GameFolderState } from './gameFolder';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ShareStateUI } from './share';
@@ -98,6 +98,10 @@ function ModStatusRow({ root }: { root: string }) {
     : `Installed v${r.version}, but SML isn't installed. Install SML with Satisfactory Mod Manager, then restart the game.` }),
     e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }))
     .finally(() => { setBusy(false); liveModState().then(setMod).catch(() => {}); }); };
+  const uninstall = (game: string) => uninstallLiveMod(game)
+    .then(done => done && setMsg({ ok: true, text: 'Live mod removed. Restart the game if it was open.' }),
+      e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }))
+    .finally(() => liveModState().then(setMod).catch(() => {}));
   const offer = mod?.bundled && (!mod.installed || olderThan(mod.installed, mod.bundled)) ? mod.bundled : null;
   const running = !!status && status.ageSecs <= MOD_FRESH_SECS;
   return (
@@ -117,6 +121,9 @@ function ModStatusRow({ root }: { root: string }) {
         : !mod?.bundled && <button onClick={() => install(true)} disabled={busy} title="Pick the FactoryArchiveLive.zip you downloaded; it goes into the game's Mods folder"
             style={{ alignSelf: 'flex-start', padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10.5 }}>
             {status ? 'Update Live mod from zip…' : 'Install Live mod from zip…'}</button>}
+      {mod?.game && mod.installed && <button onClick={() => uninstall(mod.game!)} disabled={busy} title={`Remove Factory Archive Live v${mod.installed} from the game's Mods folder`}
+        style={{ alignSelf: 'flex-start', padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10.5 }}>
+        Uninstall Live mod v{mod.installed}</button>}
       {msg && <div role={msg.ok ? 'status' : 'alert'} style={{ color: msg.ok ? 'var(--ok)' : 'var(--warn)', lineHeight: 1.4 }}>{msg.text}</div>}
     </div>
   );

@@ -201,3 +201,12 @@ export async function installLiveMod(fromZip: boolean): Promise<ModInstall | nul
   if (typeof game !== 'string') return null;
   return invoke<ModInstall>('install_live_mod', { zip, game });
 }
+
+/** Ask, then remove the Live mod from the game it was found in. False if cancelled. */
+export async function uninstallLiveMod(game: string): Promise<boolean> {
+  const { ask } = await import('@tauri-apps/plugin-dialog');
+  if (!await ask(`Remove the Factory Archive Live mod from ${game}? SML and your other mods stay. Close the game first.`,
+    { title: 'Uninstall Live mod', kind: 'warning', okLabel: 'Uninstall' })) return false;
+  await invoke('uninstall_live_mod', { game });
+  return true;
+}

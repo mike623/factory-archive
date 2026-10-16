@@ -17,7 +17,7 @@
 - **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
 - **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
 - **Share on LAN** for multiplayer. Friends on your network open a web page from your app to browse and download your blueprints, or to paste a link that goes straight into the world you're hosting.
-- **Installs the Live mod for you.** Releases include the companion mod: click **Install Live mod** (or **Update Live mod**) in the sidebar and the app puts it in your Steam or Epic game's `Mods` folder. You can also pick a downloaded `FactoryArchiveLive.zip`.
+- **Installs the Live mod for you.** Releases include the companion mod: click **Install Live mod** (or **Update Live mod**) in the sidebar and the app puts it in your Steam or Epic game's `Mods` folder. You can also pick a downloaded `FactoryArchiveLive.zip`. **Uninstall Live mod** removes it again (SML and other mods stay).
 - **Updates itself.** Signed releases come from GitHub, with an **Install & restart** banner and a **Check for updates** button.
 - Search (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>), filters, favorites, grid and list views, and light and dark themes.
 

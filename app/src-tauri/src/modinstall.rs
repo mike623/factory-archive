@@ -151,6 +151,21 @@ pub fn install(zip: &[u8], game: &Path) -> Result<Installed, String> {
     })
 }
 
+/// Remove the mod from the game at `game`. Only `Mods/FactoryArchiveLive` is touched; SML and other mods stay.
+pub fn uninstall(game: &Path) -> Result<(), String> {
+    if !is_game_dir(game) { return Err("That folder isn't a Satisfactory install (there's no FactoryGame\\Binaries inside).".into()); }
+    let dest = game.join("FactoryGame").join("Mods").join(MOD);
+    if !dest.is_dir() { return Err("The Live mod isn't installed in that game.".into()); }
+    // moved aside first: a running game keeps the DLL locked, and a half-deleted mod is worse than none
+    let staging = game.join("FactoryGame").join(format!(".{MOD}.staging"));
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let old = staging.join("old");
+    let moved = fs::rename(&dest, &old).map_err(|_| "Couldn't remove the mod. Close the game first, then try again.".to_string());
+    let _ = fs::remove_dir_all(&staging);
+    moved
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +204,11 @@ mod tests {
         assert!(fs::read_to_string(m.join("FactoryArchiveLive.uplugin")).unwrap().contains("0.1.1"));
         assert!(!m.join("stale.txt").exists(), "old files are replaced, not merged");
         assert!(!g.join("FactoryGame/.FactoryArchiveLive.staging").exists());
+        fs::create_dir_all(g.join("FactoryGame/Mods/SML")).unwrap();
+        uninstall(&g).unwrap();
+        assert!(!m.exists() && g.join("FactoryGame/Mods/SML").is_dir(), "only our mod goes");
+        assert_eq!(installed_version(&g), None);
+        assert!(uninstall(&g).is_err(), "nothing to remove");
         fs::remove_dir_all(&g).ok();
     }
 

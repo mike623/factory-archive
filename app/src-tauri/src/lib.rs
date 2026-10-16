@@ -369,6 +369,12 @@ fn install_live_mod(app: tauri::AppHandle, zip: Option<String>, game: String) ->
     modinstall::install(&std::fs::read(&zip).map_err(|e| e.to_string())?, &PathBuf::from(game))
 }
 
+/// Remove the Live mod from the game at `game`.
+#[tauri::command]
+fn uninstall_live_mod(game: String) -> Result<(), String> {
+    modinstall::uninstall(&PathBuf::from(game))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -383,7 +389,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }
