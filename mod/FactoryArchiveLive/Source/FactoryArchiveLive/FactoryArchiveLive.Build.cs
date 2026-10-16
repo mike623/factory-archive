@@ -9,6 +9,6 @@ public class FactoryArchiveLive : ModuleRules
 		bLegacyPublicIncludePaths = false;
 
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "FactoryGame", "SML" });
-		PrivateDependencyModuleNames.AddRange(new[] { "DummyHeaders" });
+		PrivateDependencyModuleNames.AddRange(new[] { "DummyHeaders", "Json", "Projects" });
 	}
 }

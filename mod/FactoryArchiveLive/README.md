@@ -14,7 +14,7 @@ Every 2 seconds, `UFALiveSubsystem` lists the `.sbp` files in the current sessio
 
 The subsystem then calls the game's own sequence, the same one [SBS](https://github.com/Satisfactory-KMods/public-source/tree/main/SBS) uses: `ReadBlueprintFromDisc`, `RefreshBlueprintsAndDescriptors`, `MarkRecordDataDirty` and `GenerateManifest`.
 
-The mod never writes, renames or deletes files.
+The mod never writes, renames or deletes blueprint files. Its only write is a status file, `<blueprints>/FactoryArchiveLive.json` (`version`, `session`, `loaded`), rewritten on every poll while a world is loaded. Factory Archive shows "Live mod running" in its sidebar while that file is less than 10 seconds old.
 
 ## Building
 

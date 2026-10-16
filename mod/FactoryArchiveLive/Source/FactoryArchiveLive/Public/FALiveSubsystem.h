@@ -32,4 +32,7 @@ private:
 
 	/** Signature of files that failed to load; retried only once the files change. */
 	TMap<FString, FString> mFailed;
+
+	/** Blueprints loaded into this world so far; reported in the status file. */
+	int64 mLoadedCount = 0;
 };

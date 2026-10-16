@@ -2,9 +2,13 @@
 
 #include "Engine/World.h"
 #include "FGBlueprintSubsystem.h"
+#include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
+#include "Serialization/JsonSerializer.h"
 #include "Serialization/MemoryReader.h"
 #include "TimerManager.h"
 
@@ -18,6 +22,32 @@ namespace
 	// Same caps SBS uses; anything bigger isn't a real blueprint.
 	constexpr int64 MaxBlueprintBytes = 64 * 1024 * 1024;
 	constexpr int64 MaxConfigBytes = 1024 * 1024;
+
+	/** Read by Factory Archive (blueprints::mod_status) to show that the mod is running. Keep the name and fields in sync. */
+	constexpr const TCHAR* StatusFile = TEXT("FactoryArchiveLive.json");
+
+	FString PluginVersion()
+	{
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("FactoryArchiveLive"));
+		return Plugin ? Plugin->GetDescriptor().VersionName : TEXT("unknown");
+	}
+
+	/** Rewrites <blueprints>/FactoryArchiveLive.json; the app treats a fresh timestamp as "running". */
+	void WriteStatus(const FString& SessionDirectory, int64 Loaded)
+	{
+		FString Directory = SessionDirectory;
+		FPaths::NormalizeDirectoryName(Directory);
+		const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetStringField(TEXT("version"), PluginVersion());
+		Json->SetStringField(TEXT("session"), FPaths::GetCleanFilename(Directory));
+		Json->SetNumberField(TEXT("loaded"), Loaded);
+		FString Text;
+		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text);
+		FJsonSerializer::Serialize(Json, Writer);
+		FFileHelper::SaveStringToFile(Text, *FPaths::Combine(FPaths::GetPath(Directory), StatusFile),
+									  FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	}
 
 	/** Sizes and timestamps of the pair. Changes while Factory Archive is still writing (.sbp first, then .sbpcfg). */
 	FString Signature(const FString& Sbp, const FString& Cfg)
@@ -74,6 +104,7 @@ void UFALiveSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		return;
 	}
+	UE_LOG(LogFactoryArchiveLive, Display, TEXT("Factory Archive Live %s watching for new blueprints"), *PluginVersion());
 	InWorld.GetTimerManager().SetTimer(mPollTimer, this, &UFALiveSubsystem::Poll, PollSeconds, true,
 									   FirstPollDelaySeconds);
 }
@@ -142,6 +173,9 @@ void UFALiveSubsystem::Poll()
 		Loaded.Add(Name);
 	}
 	mPending = MoveTemp(StillPending);
+	mLoadedCount += Loaded.Num();
+	// ponytail: rewritten every poll (a few bytes every 2 s); the app reads the file's age, not a clock in it.
+	WriteStatus(Directory, mLoadedCount);
 
 	if (Loaded.IsEmpty())
 	{
