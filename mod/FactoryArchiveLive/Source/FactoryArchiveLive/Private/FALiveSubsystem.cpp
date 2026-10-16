@@ -132,6 +132,10 @@ void UFALiveSubsystem::Poll()
 		return;
 	}
 
+	if (!IFileManager::Get().DirectoryExists(*Directory))
+	{
+		return; // never treat an unreadable or missing folder as "every blueprint was deleted"
+	}
 	TArray<FString> Found;
 	IFileManager::Get().FindFiles(Found, *FPaths::Combine(Directory, TEXT("*.sbp")), true, false);
 
@@ -174,10 +178,74 @@ void UFALiveSubsystem::Poll()
 	}
 	mPending = MoveTemp(StillPending);
 	mLoadedCount += Loaded.Num();
+
+	// Blueprints whose .sbp is gone (Factory Archive deleted or renamed it). "On disk" is the game's own descriptor for
+	// each file name, so names the game sanitises for the file system still match.
+	TSet<UFGBlueprintDescriptor*> OnDisk;
+	bool bAllMatched = true;
+	for (const FString& File : Found)
+	{
+		if (UFGBlueprintDescriptor* Desc = Blueprints->GetBlueprintDescriptorByNameString(FPaths::GetBaseFilename(File)))
+		{
+			OnDisk.Add(Desc);
+		}
+		else
+		{
+			bAllMatched = false;
+		}
+	}
+	// The game's delete also deletes the blueprint's file. Only remove anything while every file maps to a loaded
+	// blueprint: an unmatched file (still being written, failed to load, or named in a way we can't map) means we
+	// can't be sure a "missing" blueprint isn't that file.
+	if (!bAllMatched)
+	{
+		mMissing.Reset();
+	}
+	TArray<UFGBlueprintDescriptor*> All;
+	if (bAllMatched)
+	{
+		Blueprints->GetBlueprintDescriptors_Internal(All);
+	}
+	TSet<FString> StillMissing;
+	TArray<FString> Removed;
+	for (UFGBlueprintDescriptor* Desc : All)
+	{
+		if (!IsValid(Desc) || OnDisk.Contains(Desc))
+		{
+			continue;
+		}
+		const FString Name = Desc->GetItemNameFromInstance().ToString();
+		// Wait one more poll, so a file that is briefly missing (a rename, a slow disk) doesn't cost the blueprint.
+		if (!mMissing.Contains(Name) || mRemoveFailed.Contains(Name))
+		{
+			StillMissing.Add(Name);
+			continue;
+		}
+		// The game's own delete: drops the descriptor, tells clients, and deletes the file (already gone here).
+		Blueprints->DeleteBlueprintDescriptor(Desc);
+		TArray<UFGBlueprintDescriptor*> After;
+		Blueprints->GetBlueprintDescriptors_Internal(After);
+		if (After.Contains(Desc))
+		{
+			UE_LOG(LogFactoryArchiveLive, Warning, TEXT("Couldn't remove blueprint '%s'; reload the save to drop it"), *Name);
+			mRemoveFailed.Add(Name);
+			StillMissing.Add(Name);
+			continue;
+		}
+		Removed.Add(Name);
+	}
+	if (bAllMatched)
+	{
+		mMissing = MoveTemp(StillMissing);
+	}
 	// ponytail: rewritten every poll (a few bytes every 2 s); the app reads the file's age, not a clock in it.
 	WriteStatus(Directory, mLoadedCount);
 
-	if (Loaded.IsEmpty())
+	for (const FString& Name : Removed)
+	{
+		UE_LOG(LogFactoryArchiveLive, Display, TEXT("Removed blueprint '%s' (its file was deleted)"), *Name);
+	}
+	if (Loaded.IsEmpty() && Removed.IsEmpty())
 	{
 		return;
 	}

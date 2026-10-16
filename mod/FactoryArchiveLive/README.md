@@ -1,6 +1,6 @@
 # Factory Archive Live
 
-A small Satisfactory mod that loads blueprints Factory Archive adds to a world's blueprint folder **while the game is running**, so you don't have to reload the save.
+A small Satisfactory mod that loads blueprints Factory Archive adds to a world's blueprint folder, and drops ones it deletes, **while the game is running**, so you don't have to reload the save.
 
 It only works on the machine that owns the world's blueprints: the host, or the dedicated server. Other players receive new blueprints from the host as usual, and they don't need the mod (`RequiredOnRemote: false`).
 
@@ -14,7 +14,9 @@ Every 2 seconds, `UFALiveSubsystem` lists the `.sbp` files in the current sessio
 
 The subsystem then calls the game's own sequence, the same one [SBS](https://github.com/Satisfactory-KMods/public-source/tree/main/SBS) uses: `ReadBlueprintFromDisc`, `RefreshBlueprintsAndDescriptors`, `MarkRecordDataDirty` and `GenerateManifest`.
 
-The mod never writes, renames or deletes blueprint files. Its only write is a status file, `<blueprints>/FactoryArchiveLive.json` (`version`, `session`, `loaded`), rewritten on every poll while a world is loaded. Factory Archive shows "Live mod running" in its sidebar while that file is less than 10 seconds old.
+A blueprint the game has loaded is removed when no `.sbp` in the folder maps to it (through the game's own `GetBlueprintDescriptorByNameString`) for two polls in a row. The mod then calls the game's `DeleteBlueprintDescriptor`, which also tells clients, and refreshes the same way. A missing or unreadable folder is never treated as "everything was deleted". Because the game's delete also removes the file, nothing is removed while any `.sbp` in the folder doesn't map to a loaded blueprint.
+
+The mod never writes or renames blueprint files, and only deletes through the game's own call for files that are already gone. Its only write is a status file, `<blueprints>/FactoryArchiveLive.json` (`version`, `session`, `loaded`), rewritten on every poll while a world is loaded. Factory Archive shows "Live mod running" in its sidebar while that file is less than 10 seconds old.
 
 ## Building
 
@@ -40,4 +42,4 @@ It runs on a **self-hosted Windows runner**. GitHub's own runners are too small 
 
 - The function signatures come from SBS's calls against game 1.2. Check them against `FGBlueprintSubsystem.h` in your starter project.
 - Whether `ReadBlueprintFromDisc` accepts a blueprint without a `.sbpcfg`. The mod allows it, because the game itself saves pairs.
-- Whether a deleted file gets removed from the build menu. The mod only adds blueprints. Removing one still needs a reload.
+- Whether `DeleteBlueprintDescriptor` removes the blueprint when its file is already gone. It's public in `FGBlueprintSubsystem.h`, but its body is in the game. If it doesn't, the log says "Couldn't remove blueprint" and a reload is still needed.
