@@ -218,8 +218,8 @@ function AccountCopy({ root, session }: { root: string | null; session: string |
     <div style={{ padding: '11px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 12.5, fontWeight: 600 }}>Copy to another account</div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <select aria-label="Account" value={target} onChange={e => setTarget(e.target.value)} style={{ ...field, flex: 1 }} className="mono">
-          {others.map(a => <option key={a.id} value={a.id}>{a.id}</option>)}
+        <select aria-label="Account" value={target} onChange={e => setTarget(e.target.value)} style={{ ...field, flex: 1 }}>
+          {others.map(a => <option key={a.id} value={a.id}>{a.name ? `${a.name} · ${a.id}` : a.id}</option>)}
         </select>
         <Btn variant="ghost" size="sm" disabled={!target} onClick={copy}>Copy save</Btn>
       </div>

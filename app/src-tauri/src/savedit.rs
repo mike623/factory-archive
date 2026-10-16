@@ -18,6 +18,7 @@
 use crate::sav::{self, PROP};
 use crate::sbp::{read_body, Reader, CHUNK_TAG};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -633,21 +634,59 @@ pub fn write_edited(root: &Path, session: &str, edits: &[Edit]) -> Result<PathBu
 /// or Epic ID (hex). Anything else in `SaveGames` (`blueprints`, …) isn't one.
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Account { pub id: String, pub has_world: bool }
+pub struct Account { pub id: String, pub has_world: bool, /** Steam profile name, when known */ pub name: Option<String> }
 
 fn account_id(s: &str) -> bool { s.len() >= 8 && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit()) }
 
 /// The account folders next to `root` (the `blueprints` folder), and which holds `session`'s newest save.
-pub fn accounts(root: &Path, session: &str) -> Vec<Account> {
+/// `names`: Steam ID → profile name, from [`steam_names`].
+pub fn accounts(root: &Path, session: &str, names: &HashMap<String, String>) -> Vec<Account> {
     let Some(save_games) = root.parent() else { return Vec::new() };
     let from = sav::latest_save(root, session).and_then(|p| p.parent().map(Path::to_path_buf));
     let mut out: Vec<Account> = fs::read_dir(save_games).into_iter().flatten().flatten()
         .filter(|e| e.path().is_dir())
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .filter(|id| account_id(id))
-        .map(|id| Account { has_world: from.as_deref() == Some(save_games.join(&id).as_path()), id })
+        .map(|id| Account { has_world: from.as_deref() == Some(save_games.join(&id).as_path()), name: names.get(&id).cloned(), id })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// Steam ID → profile name from Steam's `config/loginusers.vdf` (the accounts that signed in on
+/// this PC): `"users" { "<steam id>" { "AccountName" "…" "PersonaName" "…" … } … }`.
+/// Anything that doesn't parse gives no names; they're only labels.
+pub fn steam_names(vdf: &str) -> HashMap<String, String> {
+    let mut toks = Vec::new();
+    let mut it = vdf.chars();
+    while let Some(c) = it.next() {
+        match c {
+            '{' | '}' => toks.push((c == '{', None)),
+            '"' => {
+                let mut t = String::new();
+                while let Some(c) = it.next() {
+                    match c { '"' => break, '\\' => { if let Some(n) = it.next() { t.push(n) } } _ => t.push(c) }
+                }
+                toks.push((false, Some(t)));
+            }
+            _ => {}
+        }
+    }
+    let (mut out, mut depth, mut user, mut key) = (HashMap::new(), 0, None::<String>, None::<String>);
+    let mut i = 0;
+    while i < toks.len() {
+        match &toks[i] {
+            (true, None) => depth += 1,
+            (false, None) => { depth -= 1; if depth < 2 { user = None; } key = None; }
+            (_, Some(t)) if depth == 1 && matches!(toks.get(i + 1), Some((true, None))) => user = Some(t.clone()),
+            (_, Some(t)) if depth == 2 => match key.take() {
+                None => key = Some(t.clone()),
+                Some(k) => if let (Some(u), true) = (&user, k == "PersonaName" && !t.is_empty()) { out.insert(u.clone(), t.chars().take(64).collect()); },
+            },
+            _ => {}
+        }
+        i += 1;
+    }
     out
 }
 
@@ -779,8 +818,12 @@ mod tests {
         for d in [&root, &a, &b, &base.join("common")] { fs::create_dir_all(d).unwrap(); }
         let original = sav::tests::synthetic_save(true);
         fs::write(a.join("Steel Town_autosave_0.sav"), &original).unwrap();
-        let ids = accounts(&root, "Steel Town");
-        assert_eq!(ids, vec![Account { id: "76561198000000001".into(), has_world: true }, Account { id: "76561198000000002".into(), has_world: false }]);
+        let names = steam_names("\"users\"\n{\n\t\"76561198000000002\"\n\t{\n\t\t\"AccountName\"\t\t\"alt\"\n\t\t\"PersonaName\"\t\t\"Alt \\\"Two\\\"\"\n\t}\n}\n");
+        assert_eq!(names.get("76561198000000002").map(String::as_str), Some("Alt \"Two\""));
+        assert!(steam_names("not a vdf {{{").is_empty());
+        let ids = accounts(&root, "Steel Town", &names);
+        assert_eq!(ids, vec![Account { id: "76561198000000001".into(), has_world: true, name: None },
+            Account { id: "76561198000000002".into(), has_world: false, name: Some("Alt \"Two\"".into()) }]);
         let out = copy_to_account(&root, "Steel Town", "76561198000000002").unwrap();
         assert_eq!(out, b.join("Steel Town_autosave_0.sav"));
         assert_eq!(fs::read(&out).unwrap(), original);

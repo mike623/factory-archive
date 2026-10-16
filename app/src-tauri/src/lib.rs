@@ -243,7 +243,11 @@ fn edit_categories(root: String, session: String, edits: Vec<savedit::Edit>) -> 
 #[tauri::command]
 fn save_accounts(root: String, session: String) -> Result<Vec<savedit::Account>, String> {
     if !blueprints::valid_component(&session) { return Err("invalid world name".into()); }
-    Ok(savedit::accounts(&PathBuf::from(root), &session))
+    // ponytail: Steam's default folder only; read the registry's SteamPath if people install it elsewhere
+    let vdf = std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Steam").join("config").join("loginusers.vdf"))
+        .filter(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.len() <= 1 << 20))
+        .and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    Ok(savedit::accounts(&PathBuf::from(root), &session, &savedit::steam_names(&vdf)))
 }
 
 /// Copy the world's newest save into another account's save folder (never overwriting).
