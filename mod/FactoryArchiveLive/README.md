@@ -26,14 +26,14 @@ You need the [SML starter project](https://docs.ficsit.app/satisfactory-modding/
 
 ## CI and publishing
 
-`.github/workflows/mod.yml` builds the mod on every push to `main` that touches `mod/`. Pushing a `mod-v<SemVersion>` tag also uploads it to ficsit.app as a beta, so players can install it with Satisfactory Mod Manager. Without SMM, download the zip and use **Install Live mod from zip…** in Factory Archive's sidebar (SML must be installed). The tag must match `SemVersion` in the `.uplugin`.
+`.github/workflows/mod.yml` builds the mod on every push to `main` that touches `mod/`. Pushing a `mod-v<SemVersion>` tag also uploads it to ficsit.app as a beta, so players can install it with Satisfactory Mod Manager. Factory Archive releases also bundle the newest `mod-v*` release, so the app can install or update it in one click (SML must be installed). The tag must match `SemVersion` in the `.uplugin`.
 
 It runs on a **self-hosted Windows runner**. GitHub's own runners are too small for the modding engine, and the engine's license doesn't allow putting it in a public image. One-time setup:
 
 1. On the Windows machine, install the CSS engine, Visual Studio, Wwise and the SML starter project ([Dependencies](https://docs.ficsit.app/satisfactory-modding/latest/Development/BeginnersGuide/dependencies.html)). Build it once by hand to confirm it works.
 2. Add a runner to this repo (Settings → Actions → Runners → New self-hosted runner) with the labels `self-hosted, windows, satisfactory-modding`.
 3. Add these repository variables: `UE_ROOT` (the engine folder that contains `Engine/`) and `SML_PROJECT` (the folder that contains `FactoryGame.uproject`).
-4. On [ficsit.app](https://ficsit.app), create the mod with mod reference **`FactoryArchiveLive`**. Add its ID as the variable `SMR_MOD_ID`, and an API key from your profile as the secret `SMR_API_KEY`.
+4. On [ficsit.app](https://ficsit.app), create the mod with mod reference **`FactoryArchiveLive`**. Add its ID as the variable `SMR_MOD_ID`, and the value of the `token` cookie from a signed-in ficsit.app session as the secret `SMR_API_KEY`.
 5. In Settings → Actions → General, set fork pull request workflows to require approval. The workflow never runs on pull requests, but keep that setting anyway.
 
 ## Not verified yet

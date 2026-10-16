@@ -44,7 +44,10 @@
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
-    "category": "Utility"
+    "category": "Utility",
+    "resources": [
+      "resources/*"
+    ]
   },
   "plugins": {
     "updater": {

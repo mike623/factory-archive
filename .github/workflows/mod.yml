@@ -9,7 +9,7 @@ name: Companion mod
 #   - the CSS engine, Visual Studio and Wwise, per https://docs.ficsit.app (Beginner's Guide, Dependencies)
 #   - the SML starter project, with Wwise integrated
 # Repository variables: UE_ROOT (engine folder), SML_PROJECT (starter project folder)
-# Repository secrets:   SMR_API_KEY (ficsit.app → profile → API keys), plus variable SMR_MOD_ID
+# Repository secrets:   SMR_API_KEY (the `token` cookie from a signed-in ficsit.app session), plus variable SMR_MOD_ID
 #
 # Security: this repo is public, so this workflow must never run on pull_request (fork code would run
 # on the runner machine). Only pushes, tags and manual runs, which need write access.

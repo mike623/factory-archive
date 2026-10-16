@@ -7,7 +7,7 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { installLiveMod, modStatus, openFolder, tailPath, type ModStatus } from './platform';
+import { installLiveMod, liveModState, modStatus, openFolder, tailPath, type LiveModState, type ModStatus } from './platform';
 import type { GameFolderState } from './gameFolder';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ShareStateUI } from './share';
@@ -71,10 +71,20 @@ function ago(secs: number) {
   return `${Math.round(secs / 86400)} days ago`;
 }
 
-/** Live mod status (once it has run with this folder) and a button to install or update it from its zip. */
+/** a.b.c version order; non-numbers count as 0 */
+const olderThan = (a: string, b: string) => {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+  return false;
+};
+
+/** Live mod status (once it has run with this folder), and one-click install / update from the copy bundled with the app. */
 function ModStatusRow({ root }: { root: string }) {
   const [status, setStatus] = useState<ModStatus | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mod, setMod] = useState<LiveModState | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { liveModState().then(setMod).catch(() => {}); }, []);
   useEffect(() => {
     let alive = true;
     const poll = () => modStatus(root).then(s => { if (alive) setStatus(s); }).catch(() => {});
@@ -83,10 +93,12 @@ function ModStatusRow({ root }: { root: string }) {
     return () => { alive = false; clearInterval(id); };
   }, [root]);
   if (!isTauri()) return null;
-  const install = () => installLiveMod().then(r => r && setMsg({ ok: true, text: r.sml
+  const install = (fromZip: boolean) => { setBusy(true); installLiveMod(fromZip).then(r => r && setMsg({ ok: true, text: r.sml
     ? `Installed v${r.version}. Restart the game to load it.`
     : `Installed v${r.version}, but SML isn't installed. Install SML with Satisfactory Mod Manager, then restart the game.` }),
-    e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }));
+    e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }))
+    .finally(() => { setBusy(false); liveModState().then(setMod).catch(() => {}); }); };
+  const offer = mod?.bundled && (!mod.installed || olderThan(mod.installed, mod.bundled)) ? mod.bundled : null;
   const running = !!status && status.ageSecs <= MOD_FRESH_SECS;
   return (
     <div style={{ padding: '0 12px 10px', marginTop: -2, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: 'var(--text-dim)' }}>
@@ -98,9 +110,13 @@ function ModStatusRow({ root }: { root: string }) {
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {running ? `Live mod running · ${status.session}` : `Live mod idle · seen ${ago(status.ageSecs)}`}</span>
       </div>}
-      <button onClick={install} title="Pick the FactoryArchiveLive.zip you downloaded; it goes into the game's Mods folder"
-        style={{ alignSelf: 'flex-start', padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10.5 }}>
-        {status ? 'Update Live mod from zip…' : 'Install Live mod from zip…'}</button>
+      {offer
+        ? <div><Btn variant="ghost" size="sm" disabled={busy} onClick={() => install(false)}
+            title="Copies the mod bundled with this app into the game's Mods folder. Close the game first.">
+            {busy ? 'Installing…' : mod?.installed ? `Update Live mod to v${offer}` : `Install Live mod v${offer}`}</Btn></div>
+        : !mod?.bundled && <button onClick={() => install(true)} disabled={busy} title="Pick the FactoryArchiveLive.zip you downloaded; it goes into the game's Mods folder"
+            style={{ alignSelf: 'flex-start', padding: 0, background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10.5 }}>
+            {status ? 'Update Live mod from zip…' : 'Install Live mod from zip…'}</button>}
       {msg && <div role={msg.ok ? 'status' : 'alert'} style={{ color: msg.ok ? 'var(--ok)' : 'var(--warn)', lineHeight: 1.4 }}>{msg.text}</div>}
     </div>
   );

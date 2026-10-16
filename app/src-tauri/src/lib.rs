@@ -331,10 +331,38 @@ fn game_installs() -> Vec<String> {
     modinstall::find_games(&pf, &pd).into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
 }
 
-/// Install or update the Live mod from its release zip into the game at `game`.
+/// The Live mod zip bundled with the app (release builds only), if there is one.
+fn bundled_mod(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().resolve("resources/FactoryArchiveLive.zip", tauri::path::BaseDirectory::Resource).ok().filter(|p| p.is_file())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveModState {
+    /// version of the mod bundled with the app
+    bundled: Option<String>,
+    /// the first Satisfactory install found on this PC, and the mod version in it
+    game: Option<String>,
+    installed: Option<String>,
+}
+
+/// What a one-click install or update of the Live mod would do.
 #[tauri::command]
-fn install_live_mod(zip: String, game: String) -> Result<modinstall::Installed, String> {
-    let zip = PathBuf::from(zip);
+fn live_mod_state(app: tauri::AppHandle) -> LiveModState {
+    let bundled = bundled_mod(&app).and_then(|p| std::fs::read(p).ok()).and_then(|z| modinstall::version_of(&z).ok());
+    let game = game_installs().into_iter().next();
+    let installed = game.as_deref().and_then(|g| modinstall::installed_version(Path::new(g)));
+    LiveModState { bundled, game, installed }
+}
+
+/// Install or update the Live mod into the game at `game`, from the release zip at `zip`
+/// or, without one, from the zip bundled with the app.
+#[tauri::command]
+fn install_live_mod(app: tauri::AppHandle, zip: Option<String>, game: String) -> Result<modinstall::Installed, String> {
+    let zip = match zip {
+        Some(z) => PathBuf::from(z),
+        None => bundled_mod(&app).ok_or("This copy of Factory Archive doesn't include the mod. Pick its zip instead.")?,
+    };
     if !zip.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) { return Err("Pick the mod's .zip file.".into()); }
     let meta = std::fs::metadata(&zip).map_err(|e| e.to_string())?;
     if !meta.is_file() || meta.len() > 512 << 20 { return Err("Pick the mod's .zip file.".into()); }
@@ -355,7 +383,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, install_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

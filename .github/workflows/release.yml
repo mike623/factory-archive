@@ -113,6 +113,25 @@ jobs:
           fi
           echo "Signing key OK"
 
+      # Bundle the Live mod from the newest mod-v* release so the app can install it in one click.
+      # Its .pdb debug symbols are ~97% of the zip and the game doesn't need them, so they're left out.
+      - name: Bundle the Live mod
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '[.[].tagName | select(startswith("mod-v"))][0] // empty')
+          if [ -z "$tag" ]; then echo "::warning title=Live mod::No mod-v* release yet; shipping without the bundled mod"; exit 0; fi
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p FactoryArchiveLive.zip -D "$RUNNER_TEMP"
+          python3 - "$RUNNER_TEMP/FactoryArchiveLive.zip" app/src-tauri/resources/FactoryArchiveLive.zip <<'EOF'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as src, zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as out:
+              assert 'FactoryArchiveLive.uplugin' in src.namelist(), 'not the Live mod zip'
+              for i in src.infolist():
+                  if not i.filename.lower().endswith('.pdb'): out.writestr(i, src.read(i))
+          EOF
+          echo "Bundled $tag ($(wc -c < app/src-tauri/resources/FactoryArchiveLive.zip) bytes)"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

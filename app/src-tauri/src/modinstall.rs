@@ -93,16 +93,32 @@ fn unpack(z: &mut Zip, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// A zip downloaded from a GitHub Actions run wraps the real one: returns that inner zip, if any.
+fn unwrap(zip: &[u8]) -> Result<Option<Vec<u8>>, String> {
+    let mut z = open(zip)?;
+    if z.len() == 1 && z.name_for_index(0).is_some_and(|n| n.ends_with(".zip")) { Ok(Some(read_capped(&mut z, 0, MAX_TOTAL)?)) } else { Ok(None) }
+}
+
+/// The mod version inside `zip`, if it's the Factory Archive Live zip.
+pub fn version_of(zip: &[u8]) -> Result<String, String> {
+    let inner = unwrap(zip)?;
+    check(&mut open(inner.as_deref().unwrap_or(zip))?)
+}
+
+/// The version installed in the game at `game`, if any.
+pub fn installed_version(game: &Path) -> Option<String> {
+    let f = fs::File::open(game.join("FactoryGame").join("Mods").join(MOD).join(format!("{MOD}.uplugin"))).ok()?;
+    let mut buf = Vec::new();
+    f.take(64 << 10).read_to_end(&mut buf).ok()?;
+    let plugin: serde_json::Value = serde_json::from_slice(&buf).ok()?;
+    plugin["SemVersion"].as_str().map(str::to_string)
+}
+
 /// Install (or update) the mod from `zip` into the game at `game`.
 pub fn install(zip: &[u8], game: &Path) -> Result<Installed, String> {
     if !is_game_dir(game) { return Err("That folder isn't a Satisfactory install (there's no FactoryGame\\Binaries inside).".into()); }
-    let mut z = open(zip)?;
-    // a zip downloaded from a GitHub Actions run wraps the real one
-    let inner;
-    if z.len() == 1 && z.name_for_index(0).is_some_and(|n| n.ends_with(".zip")) {
-        inner = read_capped(&mut z, 0, MAX_TOTAL)?;
-        z = open(&inner)?;
-    }
+    let inner = unwrap(zip)?;
+    let mut z = open(inner.as_deref().unwrap_or(zip))?;
     let version = check(&mut z)?;
 
     // staging lives outside Mods so the game never sees a half-written or second copy
@@ -161,8 +177,11 @@ mod tests {
     #[test]
     fn installs_then_updates() {
         let g = tmp("ok");
+        assert_eq!(installed_version(&g), None);
+        assert_eq!(version_of(&good("0.1.0")).unwrap(), "0.1.0");
         let r = install(&good("0.1.0"), &g).unwrap();
         assert_eq!(r.version, "0.1.0");
+        assert_eq!(installed_version(&g).as_deref(), Some("0.1.0"));
         assert!(!r.sml);
         fs::write(g.join("FactoryGame/Mods/FactoryArchiveLive/stale.txt"), "x").unwrap();
         install(&good("0.1.1"), &g).unwrap();

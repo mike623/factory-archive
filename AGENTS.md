@@ -67,7 +67,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 
 ## Releasing
 
-Bump `version` in `app/src-tauri/tauri.conf.json` **and** `app/package.json` (then `npm install --package-lock-only` in `app/`), and push to `main`. `release.yml` publishes it if that version has no release yet. Don't reuse a version number. Each release must contain `latest.json` and `.sig` files, or updates break.
+Bump `version` in `app/src-tauri/tauri.conf.json` **and** `app/package.json` (then `npm install --package-lock-only` in `app/`), and push to `main`. `release.yml` publishes it if that version has no release yet. Don't reuse a version number. Each release must contain `latest.json` and `.sig` files, or updates break. `release.yml` bundles the Live mod from the newest `mod-v*` release (without `.pdb` files) into `app/src-tauri/resources/`, so release a new mod version (`mod-v<SemVersion>` tag) before the app release that should ship it.
 
 ## Commits
 
