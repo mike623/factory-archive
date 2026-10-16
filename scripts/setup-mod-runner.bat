@@ -5,10 +5,14 @@ rem (.github/workflows/mod.yml), sets the UE_ROOT / SML_PROJECT repo variables, 
 rem
 rem Usage:   setup-mod-runner.bat <engine folder> <starter project folder>
 rem Example: setup-mod-runner.bat "C:\Program Files\Unreal Engine - CSS" C:\SML
+rem          The runner goes in C:\actions-runner. To use another folder, first: set RUNNER_DIR=F:\actions-runner
 rem Needs:   git, gh (logged in with "gh auth login"), pwsh
+rem Later:   start the runner again with start-mod-runner.bat
 
 set REPO=mike623/factory-archive
-set RUNNER_DIR=C:\actions-runner
+if not defined RUNNER_DIR set RUNNER_DIR=C:\actions-runner
+rem Some shells set this, and then cmd won't run config.cmd / run.cmd from the runner folder.
+set NoDefaultCurrentDirectoryInExePath=
 set UE_ROOT=%~1
 set SML_PROJECT=%~2
 
@@ -39,6 +43,6 @@ gh variable set SML_PROJECT -R %REPO% -b "%SML_PROJECT%" || exit /b 1
 
 echo.
 echo Runner registered. It picks up queued builds while this window is open (Ctrl+C stops it).
-echo Next time, just run %RUNNER_DIR%\run.cmd
+echo Next time, run: scripts\start-mod-runner.bat "%RUNNER_DIR%"
 cd /d "%RUNNER_DIR%"
 call run.cmd
