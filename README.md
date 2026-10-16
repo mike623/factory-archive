@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/mike623/factory-archive?label=download)](https://github.com/mike623/factory-archive/releases/latest)
 [![Desktop build](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml/badge.svg)](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20(CrossOver)-555)
+![Platforms](https://img.shields.io/badge/platforms-Windows-555)
 
 ![Factory Archive library](docs/screenshots/library.png)
 
@@ -17,7 +17,6 @@
 - **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
 - **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
 - **Share on LAN** for multiplayer. Friends on your network open a web page from your app to browse and download your blueprints, or to paste a link that goes straight into the world you're hosting.
-- **Works on Windows and on macOS with CrossOver.** On a Mac it finds Satisfactory inside your CrossOver bottles.
 - **Updates itself.** Signed releases come from GitHub, with an **Install & restart** banner and a **Check for updates** button.
 - Search (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>), filters, favorites, grid and list views, and light and dark themes.
 
@@ -52,7 +51,6 @@ Satisfactory keeps blueprints **per world (save session)**, in one folder per se
 | Platform | Blueprints folder |
 | --- | --- |
 | Windows | `%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\blueprints\<session>\` |
-| macOS + CrossOver | `~/Library/Application Support/CrossOver/Bottles/<bottle>/drive_c/users/<user>/AppData/Local/FactoryGame/Saved/SaveGames/blueprints/<session>/` |
 
 The app finds this folder automatically. If it can't, click the folder card in the sidebar and choose it yourself. The folder button next to it opens the current world's folder in Explorer or Finder.
 

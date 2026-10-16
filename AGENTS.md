@@ -57,7 +57,7 @@ Before you finish, run **`npx tsc --noEmit`, `npx vite build` and `cargo test`**
 
 ## Game facts the code relies on
 
-- Blueprints are stored at `<LocalAppData>/FactoryGame/Saved/SaveGames/blueprints/<session>/<name>.sbp` (+ an optional `.sbpcfg`). On macOS, this is inside CrossOver bottles.
+- Blueprints are stored at `<LocalAppData>/FactoryGame/Saved/SaveGames/blueprints/<session>/<name>.sbp` (+ an optional `.sbpcfg`). Only Windows is supported; CrossOver detection was dropped (a custom folder still works on any OS).
 - Blueprint categories / sub-categories live in the world's `.sav` (`mBlueprintCategoryRecords`), not in the blueprint files. Layout taken from public save parsers; check against a real save with `FA_SAMPLE_SAV`. Satisfactory 1.1+ writes the newer (UE 5.4) property tags; `sav.rs` reads both formats.
 - Whether the game loads a save edited by `savedit.rs` hasn't been confirmed in-game yet. The header's save-consistency hash is copied unchanged.
 - Blueprints belong to the **world** (the host's machine, or the server), not the player.

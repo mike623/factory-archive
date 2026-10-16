@@ -12,7 +12,7 @@ export function openExternal(url: string) {
 }
 
 export interface GameFolder {
-  kind: 'native' | 'crossover' | 'custom';
+  kind: 'native' | 'custom';
   label: string;
   path: string;
   /** whether the game's FactoryGame data folder exists there */
@@ -26,14 +26,14 @@ const PREVIEW_FOLDERS: GameFolder[] = [
 
 /**
  * Blueprint roots Satisfactory uses on this machine, best match first:
- * the Windows profile folder, or every CrossOver bottle with the game on macOS.
+ * the Windows profile folder.
  */
 export async function findGameFolders(): Promise<GameFolder[]> {
   if (!isTauri()) return PREVIEW_FOLDERS;
   try { return await invoke<GameFolder[]>('game_folders'); } catch (e) { console.error(e); return []; }
 }
 
-/** Let the user point at a blueprints folder by hand (e.g. a bottle in a custom location). */
+/** Let the user point at a blueprints folder by hand (e.g. a copy synced from another PC). */
 export async function pickGameFolder(): Promise<GameFolder | null> {
   if (!isTauri()) return null;
   const { open } = await import('@tauri-apps/plugin-dialog');

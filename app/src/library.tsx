@@ -209,7 +209,7 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
           </div>
           <div className="mono" style={{ fontSize: 9.5, color: 'var(--text-mute)', whiteSpace: 'nowrap',
             overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {!current ? 'Choose folder…' : current.kind === 'crossover' ? current.label : tailPath(current.path, 2)}</div>
+            {!current ? 'Choose folder…' : tailPath(current.path, 2)}</div>
         </button>
         <div style={{ width: 30, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
           <button onClick={openCurrent} disabled={!current}
