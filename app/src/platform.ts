@@ -213,7 +213,8 @@ export async function uninstallLiveMod(game: string): Promise<boolean> {
 
 /* ---------- moving a world to another Steam / Epic account on this PC ---------- */
 
-export interface SaveAccount { id: string; hasWorld: boolean; name: string | null }
+/** save: the world's newest save file (the one the category editor reads), on the account that has it */
+export interface SaveAccount { id: string; hasWorld: boolean; name: string | null; save: string | null }
 /** Account save folders on this PC, and which one holds the world's newest save. */
 export async function saveAccounts(root: string, session: string): Promise<SaveAccount[]> {
   return isTauri() ? invoke<SaveAccount[]>('save_accounts', { root, session }) : [];

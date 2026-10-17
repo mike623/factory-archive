@@ -634,7 +634,10 @@ pub fn write_edited(root: &Path, session: &str, edits: &[Edit]) -> Result<PathBu
 /// or Epic ID (hex). Anything else in `SaveGames` (`blueprints`, …) isn't one.
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Account { pub id: String, pub has_world: bool, /** Steam profile name, when known */ pub name: Option<String> }
+pub struct Account {
+    pub id: String, pub has_world: bool, /** Steam profile name, when known */ pub name: Option<String>,
+    /** the world's newest save (the one the editor reads), on the account that has it */ pub save: Option<String>,
+}
 
 fn account_id(s: &str) -> bool { s.len() >= 8 && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit()) }
 
@@ -642,12 +645,17 @@ fn account_id(s: &str) -> bool { s.len() >= 8 && s.len() <= 64 && s.chars().all(
 /// `names`: Steam ID → profile name, from [`steam_names`].
 pub fn accounts(root: &Path, session: &str, names: &HashMap<String, String>) -> Vec<Account> {
     let Some(save_games) = root.parent() else { return Vec::new() };
-    let from = sav::latest_save(root, session).and_then(|p| p.parent().map(Path::to_path_buf));
+    let latest = sav::latest_save(root, session);
+    let from = latest.as_ref().and_then(|p| p.parent().map(Path::to_path_buf));
+    let file = latest.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
     let mut out: Vec<Account> = fs::read_dir(save_games).into_iter().flatten().flatten()
         .filter(|e| e.path().is_dir())
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .filter(|id| account_id(id))
-        .map(|id| Account { has_world: from.as_deref() == Some(save_games.join(&id).as_path()), name: names.get(&id).cloned(), id })
+        .map(|id| {
+            let has_world = from.as_deref() == Some(save_games.join(&id).as_path());
+            Account { has_world, name: names.get(&id).cloned(), save: if has_world { file.clone() } else { None }, id }
+        })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out
@@ -692,6 +700,8 @@ pub fn steam_names(vdf: &str) -> HashMap<String, String> {
 
 /// Copy `session`'s newest save, byte for byte, into another account's save folder on this PC, so
 /// that account can load it. Never overwrites: if a save with that name is there, nothing is written.
+/// The copy is dated a second before the original, so the original stays the world's newest save and
+/// the app keeps working on the account it was on.
 pub fn copy_to_account(root: &Path, session: &str, account: &str) -> Result<PathBuf, String> {
     if !account_id(account) { return Err("That isn't an account save folder.".into()); }
     let dir = root.parent().ok_or("No save folder")?.join(account);
@@ -704,7 +714,8 @@ pub fn copy_to_account(root: &Path, session: &str, account: &str) -> Result<Path
     let dest = dir.join(src.file_name().ok_or("No save found")?);
     let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&dest)
         .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { format!("{} already exists in that account.", dest.file_name().unwrap_or_default().to_string_lossy()) } else { e.to_string() })?;
-    if let Err(e) = f.write_all(&bytes).and_then(|_| f.sync_all()) {
+    let older = fs::metadata(&src).and_then(|m| m.modified()).map(|t| t - std::time::Duration::from_secs(1));
+    if let Err(e) = f.write_all(&bytes).and_then(|_| f.sync_all()).and_then(|_| f.set_modified(older?)) {
         drop(f);
         let _ = fs::remove_file(&dest);
         return Err(e.to_string());
@@ -822,13 +833,14 @@ mod tests {
         assert_eq!(names.get("76561198000000002").map(String::as_str), Some("Alt \"Two\""));
         assert!(steam_names("not a vdf {{{").is_empty());
         let ids = accounts(&root, "Steel Town", &names);
-        assert_eq!(ids, vec![Account { id: "76561198000000001".into(), has_world: true, name: None },
-            Account { id: "76561198000000002".into(), has_world: false, name: Some("Alt \"Two\"".into()) }]);
+        assert_eq!(ids, vec![Account { id: "76561198000000001".into(), has_world: true, name: None, save: Some("Steel Town_autosave_0.sav".into()) },
+            Account { id: "76561198000000002".into(), has_world: false, name: Some("Alt \"Two\"".into()), save: None }]);
         let out = copy_to_account(&root, "Steel Town", "76561198000000002").unwrap();
         assert_eq!(out, b.join("Steel Town_autosave_0.sav"));
         assert_eq!(fs::read(&out).unwrap(), original);
+        assert_eq!(accounts(&root, "Steel Town", &names), ids, "the original stays the newest save");
         assert!(copy_to_account(&root, "Steel Town", "76561198000000002").is_err(), "already exists / already there");
-        assert!(copy_to_account(&root, "Steel Town", "76561198000000001").is_err(), "newest save is in a now");
+        assert!(copy_to_account(&root, "Steel Town", "76561198000000001").is_err(), "newest save is in a");
         assert!(copy_to_account(&root, "Steel Town", "../x").is_err());
         assert!(copy_to_account(&root, "Steel Town", "common").is_err());
         assert!(copy_to_account(&root, "Steel Town", "aaaaaaaaaaaa").is_err(), "no such folder");

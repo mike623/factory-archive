@@ -20,10 +20,10 @@ export function useCategoryEdits(root: string | null, session: string | null) {
     categoryTree(root, session, []).then(v => { setView(v); setError(null); }).catch(e => setError(String(e)));
   }, [root, session]);
 
-  /** Queue a change. Rejects (and queues nothing) if it isn't valid, e.g. a name that's taken. */
-  const add = useCallback(async (e: CategoryEdit) => {
+  /** Queue changes. Rejects (and queues nothing) if any isn't valid, e.g. a name that's taken. */
+  const add = useCallback(async (e: CategoryEdit | CategoryEdit[]) => {
     if (!root || !session) throw new Error('Pick a world session first');
-    const next = [...edits, e];
+    const next = edits.concat(e);
     setView(await categoryTree(root, session, next));
     setEdits(next);
   }, [root, session, edits]);
@@ -78,7 +78,14 @@ export function CategoryEditor({ open, onClose, cats, onWritten }: {
   const [err, setErr] = useState<string | null>(null);
   const { view, edits, busy, load, add, discard, write } = cats;
   useEffect(() => { if (open && !edits.length) load(); setErr(null); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [accounts, setAccounts] = useState<SaveAccount[]>([]);
+  const [rev, setRev] = useState(0); // bump to re-read accounts after a save is written or copied
+  useEffect(() => {
+    if (!open || !cats.root || !cats.session) return setAccounts([]);
+    saveAccounts(cats.root, cats.session).then(setAccounts, () => setAccounts([]));
+  }, [open, cats.root, cats.session, rev]);
   if (!open) return null;
+  const current = accounts.find(a => a.hasWorld);
 
   const run = async (e: CategoryEdit | null) => {
     setEditing(null);
@@ -86,7 +93,7 @@ export function CategoryEditor({ open, onClose, cats, onWritten }: {
     try { await add(e); setErr(null); } catch (x) { setErr(String(x).replace(/^Error: /, '')); }
   };
   const save = async () => {
-    try { onWritten(await write()); setErr(null); } catch (x) { setErr(String(x).replace(/^Error: /, '')); }
+    try { onWritten(await write()); setErr(null); setRev(r => r + 1); } catch (x) { setErr(String(x).replace(/^Error: /, '')); }
   };
   const count = (c: CategoryView) => c.subs.reduce((n, s) => n + s.blueprints.length, 0);
   const rowBtn = { display: 'flex', gap: 2, marginLeft: 'auto', flexShrink: 0 } as const;
@@ -101,6 +108,9 @@ export function CategoryEditor({ open, onClose, cats, onWritten }: {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div id="cat-title" style={{ fontSize: 15.5, fontWeight: 700 }}>Edit categories</div>
             <div className="tlabel" style={{ fontSize: 9, marginTop: 2 }}>{cats.session ?? 'No world selected'}</div>
+            {current && <div className="mono" title="The account and save these changes are based on"
+              style={{ fontSize: 10.5, color: 'var(--text-mute)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {current.name ? `${current.name} · ${current.id}` : current.id} › {current.save}</div>}
           </div>
           <IconBtn icon={IcClose} onClick={onClose} title="Close" />
         </div>
@@ -152,7 +162,7 @@ export function CategoryEditor({ open, onClose, cats, onWritten }: {
           {err && <div role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--warn)' }}>{err}</div>}
         </div>
 
-        <AccountCopy root={cats.root} session={cats.session} />
+        <AccountCopy root={cats.root} session={cats.session} accounts={accounts} />
 
         <div style={{ padding: '13px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 8, fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-mute)' }}>
@@ -199,20 +209,42 @@ export function MoveControl({ name, cats }: { name: string; cats: CategoryEditsS
   );
 }
 
+/** Category › sub-category pickers for the selected blueprints; queues one move each. */
+export function BatchMove({ names, cats }: { names: string[]; cats: CategoryEditsState }) {
+  const { view, load } = cats;
+  const [to, setTo] = useState<[string, string] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { if (!view) load(); }, [view, load]);
+  useEffect(() => setErr(null), [names.length]);
+  if (!view?.length || !names.length) return null;
+  const [c, s] = to && view.some(x => x.name === to[0]) ? to : [view[0].name, view[0].subs[0]?.name ?? ''];
+  const subs = view.find(x => x.name === c)?.subs ?? [];
+  const move = () => cats.add(names.map(blueprint => ({ op: 'move' as const, blueprint, category: c, sub: s })))
+    .then(() => setErr(null), e => setErr(String(e).replace(/^Error: /, '')));
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <select aria-label="Move to category" value={c} style={{ ...field, maxWidth: 140 }}
+        onChange={e => setTo([e.target.value, view.find(x => x.name === e.target.value)?.subs[0]?.name ?? ''])}>
+        {view.map(x => <option key={x.name} value={x.name}>{label(x.name)}</option>)}
+      </select>
+      <select aria-label="Move to sub-category" value={s} style={{ ...field, maxWidth: 140 }} onChange={e => setTo([c, e.target.value])}>
+        {subs.map(x => <option key={x.name} value={x.name}>{label(x.name)}</option>)}
+      </select>
+      <Btn variant="ghost" size="sm" icon={IcLayers} disabled={!subs.length} onClick={move}>Move</Btn>
+      {err && <span role="alert" title={err} style={{ fontSize: 11.5, color: 'var(--warn)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{err}</span>}
+    </span>
+  );
+}
+
 /** Copy the world's newest save into another account's save folder on this PC (e.g. a second Steam account). */
-function AccountCopy({ root, session }: { root: string | null; session: string | null }) {
-  const [accounts, setAccounts] = useState<SaveAccount[]>([]);
+function AccountCopy({ root, session, accounts }: { root: string | null; session: string | null; accounts: SaveAccount[] }) {
   const [target, setTarget] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => {
-    setMsg(null);
-    if (!root || !session) return setAccounts([]);
-    saveAccounts(root, session).then(a => { setAccounts(a); setTarget(a.find(x => !x.hasWorld)?.id ?? ''); }, () => setAccounts([]));
-  }, [root, session]);
   const others = accounts.filter(a => !a.hasWorld);
+  useEffect(() => { setMsg(null); setTarget(others[0]?.id ?? ''); }, [root, session, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!root || !session || !accounts.some(a => a.hasWorld) || !others.length) return null;
   const copy = () => copySaveToAccount(root, session, target).then(
-    file => setMsg({ ok: true, text: `Copied ${file}. Sign in to the game with that account and load it.` }),
+    file => setMsg({ ok: true, text: `Copied ${file}. Sign in to the game with that account and load it. The app keeps working on this account.` }),
     e => setMsg({ ok: false, text: String(e).replace(/^Error: /, '') }));
   return (
     <div style={{ padding: '11px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>

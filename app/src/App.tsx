@@ -24,7 +24,7 @@ import { ImportToasts } from './shareCard';
 import { UpdateBanner } from './UpdateBanner';
 import { useUpdater } from './updater';
 import { clearImageCache } from './blueprintImage';
-import { CategoryEditor, categoryOf, useCategoryEdits } from './categoryEditor';
+import { BatchMove, CategoryEditor, categoryOf, useCategoryEdits } from './categoryEditor';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -358,6 +358,9 @@ export default function App() {
             color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>{sel.size}</span>
           selected</span>
         <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
+        {cats.session && selItems.every(b => b.onDisk && b.session === cats.session) && <>
+          <BatchMove names={selItems.map(b => b.name)} cats={cats} />
+          <span style={{ width: 1, height: 22, background: 'var(--border)' }} /></>}
         <button onClick={() => setSel(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-mute)',
           fontSize: 12.5, fontFamily: 'var(--font-display)' }}>Clear</button>
         <Btn variant="primary" icon={copyMode ? IcCopy : IcExport} onClick={() => setExportOpen(true)}>
