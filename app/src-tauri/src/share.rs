@@ -1,14 +1,14 @@
 //! "Share with players": a small web server on the host's local network.
 //!
-//! Friends open `http://<host LAN IP>:<port>` in a browser to browse the host's
-//! blueprints per world session, download them, and submit links that are
-//! written straight into a session folder. There is no PIN (by design), so the
-//! server only runs while the host has sharing switched on, only serves files
-//! from the blueprints folder, and refuses cross-site requests.
+//! Friends open `http://<host LAN IP>:<port>` in a browser and get the app itself
+//! (the same built UI), working on the host's blueprints folder: browse, download,
+//! add, rename, delete, copy between worlds and edit categories. Its calls go to
+//! `POST /api/call/<command>`, which runs only the commands `WebHost::call` allows,
+//! always on the shared folder. There is no PIN (by design), so the server only runs
+//! while the host has sharing switched on, and refuses cross-site requests.
 
-use crate::blueprints::{self, BpError, CurrentSession};
-use crate::resolve;
-use serde::{Deserialize, Serialize};
+use crate::blueprints::{self, BpError};
+use serde::Serialize;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
@@ -16,10 +16,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-const PAGE: &str = include_str!("share.html");
-const FIRST_PORT: u16 = 7777;
-const PORT_TRIES: u16 = 10;
-const MAX_BODY: u64 = 8 * 1024;
+pub(crate) const FIRST_PORT: u16 = 7777;
+pub(crate) const PORT_TRIES: u16 = 10;
+/// dropped blueprint files travel as JSON number arrays, roughly 4 bytes per byte
+const MAX_BODY: u64 = 64 << 20;
+/// the built UI reads only its own files, the shared folder through the API, and pictures as data: URLs
+const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'";
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -30,11 +32,22 @@ pub struct ShareInfo {
     pub root: String,
 }
 
+/// A blueprint a friend added through the web page (event for the host's window).
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportedEvent {
+pub struct Imported {
     pub name: String,
     pub session: String,
+}
+
+/// What the server needs from the app.
+pub struct WebHost {
+    /// Answer to `GET /api/hello`, so clients scanning the network can tell this is a Factory Archive host.
+    pub hello: serde_json::Value,
+    /// A file of the built UI ("index.html", "assets/index-x.js"): bytes and content type.
+    pub asset: Box<dyn Fn(&str) -> Option<(Vec<u8>, String)> + Send + Sync>,
+    /// Run an app command for the web page on `root`. Unknown or host-only commands are an error.
+    pub call: Box<dyn Fn(&str, serde_json::Value, &Path) -> Result<serde_json::Value, String> + Send + Sync>,
 }
 
 struct Running {
@@ -50,23 +63,8 @@ pub struct ShareState {
     pinned: Arc<Mutex<Option<String>>>,
 }
 
-/// Where friends' imports go right now: the host's pick, or the detected current world.
-pub fn target_session(root: &std::path::Path, pinned: &Mutex<Option<String>>) -> Option<CurrentSession> {
-    if let Some(name) = pinned.lock().ok().and_then(|p| p.clone()) {
-        return Some(CurrentSession { name, source: "host" });
-    }
-    blueprints::detect_current(root)
-}
-
 impl ShareState {
-    /// `on_import` runs on the server thread after a friend's blueprint is written.
-    /// `imported_from(url, session folder)` names the blueprint already downloaded from that link.
-    pub fn start(
-        &self,
-        root: PathBuf,
-        on_import: impl Fn(ImportedEvent, &resolve::Resolved) + Send + 'static,
-        imported_from: impl Fn(&str, &Path) -> Option<String> + Send + 'static,
-    ) -> Result<ShareInfo, String> {
+    pub fn start(&self, root: PathBuf, host: WebHost) -> Result<ShareInfo, String> {
         let mut guard = self.running.lock().map_err(|e| e.to_string())?;
         if let Some(r) = guard.as_ref() {
             if r.info.root == root.to_string_lossy() { return Ok(r.info.clone()); }
@@ -77,12 +75,15 @@ impl ShareState {
         let server = Arc::new(server);
         let info = ShareInfo { port, urls: urls_for(port), root: root.to_string_lossy().into_owned() };
         let srv = server.clone();
-        let pinned = self.pinned.clone();
+        let ctx = Arc::new((root, host));
         let thread = std::thread::Builder::new()
             .name("share-server".into())
             .spawn(move || {
                 for req in srv.incoming_requests() {
-                    handle(req, &root, &pinned, &on_import, &imported_from);
+                    // a thread per request: refetching details or downloading a link can take a while
+                    // ponytail: unbounded; it's a LAN page for a few friends
+                    let ctx = ctx.clone();
+                    let _ = std::thread::Builder::new().name("share-request".into()).spawn(move || handle(req, &ctx.0, &ctx.1));
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -94,7 +95,7 @@ impl ShareState {
         if let Some(r) = self.running.lock().ok().and_then(|mut g| g.take()) { stop_running(r); }
     }
 
-    /// Pin friends' imports to one session, or `None` to follow the detected current world.
+    /// Pin the world friends' pages open on, or `None` to follow the detected current world.
     pub fn set_session(&self, name: Option<String>) -> Result<(), String> {
         if let Some(n) = &name {
             if !blueprints::valid_component(n) { return Err("invalid session name".into()); }
@@ -153,7 +154,7 @@ fn lan_rank(name: &str, ip: Ipv4Addr, routed: Option<Ipv4Addr>) -> Option<u8> {
     Some(range * 2 + u8::from(Some(ip) != routed) + if virtual_nic { 20 } else { 0 })
 }
 
-fn lan_ips() -> Vec<Ipv4Addr> {
+pub(crate) fn lan_ips() -> Vec<Ipv4Addr> {
     let routed = routed_ip();
     let mut found: Vec<(u8, Ipv4Addr)> = if_addrs::get_if_addrs().unwrap_or_default().into_iter()
         .filter_map(|i| match i.ip() {
@@ -232,40 +233,33 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-#[derive(Deserialize)]
-struct ImportBody {
-    url: String,
+/// A path of the built UI, as a relative file name. Only plain segments: no `..`, no hidden files.
+fn asset_path(path: &str) -> Option<String> {
+    let rel = path.trim_start_matches('/');
+    let ok = !rel.is_empty() && rel.split('/').all(|seg| !seg.is_empty() && !seg.starts_with('.')
+        && seg.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)));
+    ok.then(|| rel.to_string())
 }
 
-fn handle(
-    mut req: Request,
-    root: &PathBuf,
-    pinned: &Mutex<Option<String>>,
-    on_import: &dyn Fn(ImportedEvent, &resolve::Resolved),
-    imported_from: &dyn Fn(&str, &Path) -> Option<String>,
-) {
+/// The UI's index.html, marked so the page knows it talks to the host over HTTP.
+fn page(host: &WebHost) -> Option<Vec<u8>> {
+    let (html, _) = (host.asset)("index.html")?;
+    let html = String::from_utf8(html).ok()?;
+    Some(html.replacen("<head>", "<head><meta name=\"fa-web\" content=\"1\">", 1).into_bytes())
+}
+
+fn handle(mut req: Request, root: &Path, host: &WebHost) {
     if !host_allowed(&req) { return error(req, 403, "forbidden host"); }
-    let (path, query) = req.url().split_once('?').unwrap_or((req.url(), ""));
-    let (path, query) = (path.to_string(), query.to_string());
+    let path = req.url().split_once('?').map_or(req.url(), |(p, _)| p).to_string();
     let method = req.method().clone();
 
     match (method, path.as_str()) {
-        (Method::Get, "/") => send(req, 200, "text/html; charset=utf-8", PAGE.as_bytes().to_vec(),
-            Some(header("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"))),
+        (Method::Get, "/" | "/index.html") => match page(host) {
+            Some(html) => send(req, 200, "text/html; charset=utf-8", html, Some(header("Content-Security-Policy", CSP))),
+            None => error(req, 503, "This build of Factory Archive has no web page."),
+        },
 
-        (Method::Get, "/api/sessions") => json(req, 200, &serde_json::json!({
-            "target": target_session(root, pinned),
-            "sessions": blueprints::list_sessions(root),
-        })),
-
-        // is this link already in the world friends are adding to? (no download, just a lookup)
-        (Method::Get, "/api/check") => {
-            let url = url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()).unwrap_or_default();
-            let target = target_session(root, pinned);
-            let name = target.as_ref().filter(|t| blueprints::valid_component(&t.name))
-                .and_then(|t| imported_from(&url, &root.join(&t.name)));
-            json(req, 200, &serde_json::json!({ "imported": name, "session": target.map(|t| t.name) }))
-        }
+        (Method::Get, "/api/hello") => json(req, 200, &host.hello),
 
         (Method::Get, p) if p.starts_with("/api/file/") => {
             // /api/file/<session>/<name>.<ext>
@@ -283,41 +277,31 @@ fn handle(
             }
         }
 
-        (Method::Post, "/api/import") => {
+        (Method::Post, p) if p.starts_with("/api/call/") => {
             // JSON content type forces a CORS preflight, which we never answer, so other sites can't post here
             let is_json = req.headers().iter().any(|h| h.field.equiv("Content-Type") && h.value.as_str().starts_with("application/json"));
             if !is_json { return error(req, 415, "expected application/json"); }
-            let mut body = String::new();
-            if req.as_reader().take(MAX_BODY).read_to_string(&mut body).is_err() { return error(req, 400, "unreadable body"); }
-            let Ok(input) = serde_json::from_str::<ImportBody>(&body) else { return error(req, 400, "expected {url, session}") };
-            let Some(target) = target_session(root, pinned) else {
-                return error(req, 409, "The host hasn't picked a world session yet.");
-            };
-
-            if !blueprints::valid_component(&target.name) { return error(req, 400, &BpError::BadName.to_string()); }
-            if let Some(name) = imported_from(&input.url, &root.join(&target.name)) {
-                return error(req, 409, &BpError::Duplicate(name).to_string());
-            }
-
-            match resolve::resolve(&input.url) {
-                Err(msg) => error(req, 422, &msg),
-                Ok(bp) => match blueprints::write_blueprint(root, &target.name, &bp.name, &bp.sbp, bp.cfg.as_deref(), true) {
-                    Ok(()) => {
-                        on_import(ImportedEvent { name: bp.name.clone(), session: target.name.clone() }, &bp);
-                        json(req, 200, &serde_json::json!({ "ok": true, "name": bp.name, "session": target.name }))
-                    }
-                    Err(e @ (BpError::Exists | BpError::Duplicate(_))) => error(req, 409, &e.to_string()),
-                    Err(e) => error(req, 500, &e.to_string()),
-                },
+            let mut body = Vec::new();
+            if req.as_reader().take(MAX_BODY + 1).read_to_end(&mut body).is_err() { return error(req, 400, "unreadable body"); }
+            if body.len() as u64 > MAX_BODY { return error(req, 413, "That's too much at once. Add fewer files."); }
+            let Ok(args @ serde_json::Value::Object(_)) = serde_json::from_slice(&body) else { return error(req, 400, "expected a JSON object") };
+            match (host.call)(&p["/api/call/".len()..], args, root) {
+                Ok(v) => json(req, 200, &v),
+                Err(e) => error(req, 400, &e),
             }
         }
+
+        (Method::Get, p) if !p.starts_with("/api/") => match asset_path(p).and_then(|f| (host.asset)(&f)) {
+            Some((bytes, mime)) => send(req, 200, &mime, bytes, None),
+            None => error(req, 404, "not found"),
+        },
 
         _ => error(req, 404, "not found"),
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use std::io::Write;
@@ -339,8 +323,23 @@ mod tests {
         http(port, &format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()))
     }
 
+    pub(crate) fn host() -> WebHost {
+        WebHost {
+            hello: serde_json::json!({ "app": "factory-archive", "name": "Test PC", "version": "9.9.9" }),
+            asset: Box::new(|f| match f {
+                "index.html" => Some((b"<html><head></head><body>app</body></html>".to_vec(), "text/html".into())),
+                "assets/app.js" => Some((b"js".to_vec(), "text/javascript".into())),
+                _ => None,
+            }),
+            call: Box::new(|cmd, args, root| match cmd {
+                "echo" => Ok(serde_json::json!({ "args": args, "root": root.to_string_lossy() })),
+                _ => Err(format!("{cmd} isn't available on the web page")),
+            }),
+        }
+    }
+
     #[test]
-    fn serves_page_sessions_and_files() {
+    fn serves_app_calls_and_files() {
         let root = std::env::temp_dir().join(format!("fa-share-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("My World")).unwrap();
@@ -348,25 +347,28 @@ mod tests {
         std::fs::write(root.join("secret.txt"), b"nope").unwrap();
 
         let state = ShareState::default();
-        let info = state.start(root.clone(), |_, _| {}, |url, dir| {
-            (url == "https://x.test/steel" && dir.ends_with("My World")).then(|| "Steel 360".to_string())
-        }).unwrap();
+        let info = state.start(root.clone(), host()).unwrap();
         let port = info.port;
         let host = format!("127.0.0.1:{port}");
         assert!(info.urls.iter().any(|u| u.ends_with(&format!(":{port}"))));
 
+        // the app's own page, marked as the web version, and its files
         let (st, page) = get(port, "/", &host);
         assert_eq!(st, 200);
-        assert!(page.contains("Shared blueprints"));
+        assert!(page.contains(r#"<head><meta name="fa-web" content="1">"#) && page.contains("app"), "{page}");
+        assert_eq!(get(port, "/assets/app.js", &host), (200, "js".into()));
+        assert_eq!(get(port, "/assets/../secret.txt", &host).0, 404);
+        assert_eq!(get(port, "/.env", &host).0, 404);
 
-        let (st, body) = get(port, "/api/sessions", &host);
-        assert_eq!(st, 200);
-        assert!(body.contains("\"name\":\"My World\"") && body.contains("Steel 360"), "{body}");
-        assert!(body.contains("\"target\":{\"name\":\"My World\",\"source\":\"blueprints\"}"), "{body}");
-        state.set_session(Some("Pinned".into())).unwrap();
-        assert!(get(port, "/api/sessions", &host).1.contains("\"target\":{\"name\":\"Pinned\",\"source\":\"host\"}"));
-        assert!(state.set_session(Some("../x".into())).is_err());
-        state.set_session(None).unwrap();
+        // calls run on the shared folder, whatever root the page sends
+        let (st, body) = post(port, "/api/call/echo", "application/json", r#"{"root":"C:\\elsewhere","n":1}"#);
+        assert_eq!(st, 200, "{body}");
+        assert!(body.contains(&*root.to_string_lossy().replace('\\', "\\\\")) && body.contains(r#""n":1"#), "{body}");
+        let (st, body) = post(port, "/api/call/copy_save_to_account", "application/json", "{}");
+        assert!(st == 400 && body.contains("isn't available"), "{st} {body}");
+        // JSON objects only (a JSON content type forces a CORS preflight, so other sites can't post)
+        assert_eq!(post(port, "/api/call/echo", "text/plain", "{}").0, 415);
+        assert_eq!(post(port, "/api/call/echo", "application/json", "[1]").0, 400);
 
         let (st, body) = get(port, "/api/file/My%20World/Steel%20360.sbp", &host);
         assert_eq!((st, body.as_str()), (200, "SBPDATA"));
@@ -377,21 +379,7 @@ mod tests {
         assert_eq!(get(port, "/api/file/My%20World/Nope.sbp", &host).0, 404);
         assert_eq!(get(port, "/", "evil.example.com").0, 403);
 
-        // already-imported links are spotted before any download
-        let check = "/api/check?url=https%3A%2F%2Fx.test%2Fsteel";
-        assert!(get(port, check, &host).1.contains(r#""imported":"Steel 360""#));
-        assert!(get(port, "/api/check?url=https%3A%2F%2Fx.test%2Fother", &host).1.contains(r#""imported":null"#));
-        let (st, body) = post(port, "/api/import", "application/json", r#"{"url":"https://x.test/steel"}"#);
-        assert!(st == 409 && body.contains("already imported"), "{st} {body}");
-
-        // imports: must be JSON, and unresolvable links are reported, never written
-        assert_eq!(post(port, "/api/import", "text/plain", "{}").0, 415);
-        let (st, body) = post(port, "/api/import", "application/json",
-            r#"{"url":"http://127.0.0.1:9/not-allowed.sbp"}"#);
-        assert_eq!(st, 422, "{body}");
-        assert!(body.contains("local"), "{body}"); // friends can't make the host fetch local addresses
-        assert_eq!(std::fs::read_dir(root.join("My World")).unwrap().count(), 1);
-
+        assert!(state.set_session(Some("../x".into())).is_err());
         state.stop();
         assert!(state.status().is_none());
         // tiny_http closes its listener asynchronously after stop
@@ -401,6 +389,15 @@ mod tests {
         });
         assert!(closed, "server still listening after stop");
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn asset_paths_are_plain() {
+        assert_eq!(asset_path("/assets/index-Ab_1.js").as_deref(), Some("assets/index-Ab_1.js"));
+        assert_eq!(asset_path("/favicon.svg").as_deref(), Some("favicon.svg"));
+        for bad in ["/", "/../x", "/assets/../x", "/a//b", "/.git/config", "/a%2Fb", "/a\\b"] {
+            assert_eq!(asset_path(bad), None, "{bad}");
+        }
     }
 
     #[test]

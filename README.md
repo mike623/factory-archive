@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/mike623/factory-archive?label=download)](https://github.com/mike623/factory-archive/releases/latest)
 [![Desktop build](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml/badge.svg)](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platforms](https://img.shields.io/badge/platforms-Windows-555)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20(client)-555)
 
 ![Factory Archive library](docs/screenshots/library.png)
 
@@ -16,7 +16,8 @@
 - **Blueprint breakdown.** See the size, **material cost** and **buildings** (e.g. 3 × Foundry, 16 × Conveyor Belt Mk.4) of any blueprint, read from the `.sbp` file itself. It works for every blueprint, wherever it came from, and works offline.
 - **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
 - **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
-- **Share on LAN** for multiplayer. Friends on your network open a web page from your app to browse and download your blueprints, or to paste a link that goes straight into the world you're hosting.
+- **Share on LAN** for multiplayer. Friends on your network open the app itself in their browser, working on your blueprints: browse, download, add, rename, delete, copy between worlds and edit categories.
+- **Client mode.** The Mac app (and a Windows PC switched to client) finds a host sharing on your network and joins it on its own, so you manage the host's blueprints from your own app.
 - **Installs the Live mod for you.** Releases include the companion mod: click **Install Live mod** (or **Update Live mod**) in the sidebar and the app puts it in your Steam or Epic game's `Mods` folder. You can also pick a downloaded `FactoryArchiveLive.zip`. **Uninstall Live mod** removes it again (SML and other mods stay).
 - **Updates itself.** Signed releases come from GitHub, with an **Install & restart** banner and a **Check for updates** button.
 - Search (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>), filters, favorites, grid and list views, and light and dark themes.
@@ -90,14 +91,16 @@ The format was worked out from real Satisfactory 1.0 blueprints (save version 52
 Blueprints belong to the world, so in multiplayer they live on the **host's** machine. Players who join a world see the host's blueprints, not their own.
 
 1. The host turns on **Share on LAN** in the sidebar and sends friends the link, e.g. `http://192.168.1.20:7777`. Allow the firewall prompt on **private** networks.
-2. Friends open it in any browser to **browse and download** the host's blueprints, or to **paste a link**, which goes straight into the host's current world.
-3. The host gets a notification and reloads the save.
+2. Friends open it in any browser and get the same app, working on the host's blueprints folder. They can browse, **download** (instead of *Open folder*), add files or links, rename, delete (to the host's Trash), copy between worlds, edit categories and refetch details. Account and save copies, folder picking and the Live mod stay on the host.
+3. The host's window updates and shows what friends added. The host reloads the save to see it in the game.
 
-Imports go into the world that's currently being played, detected from the newest `<session>_autosave_<n>.sav`. The host can pick another one under **Imports go to**.
+Instead of a browser, friends can use the app as a **client**. On a Mac it's always a client; on Windows, click **Use this PC as a client** under Multiplayer (the choice is remembered). A client searches the local network for a host on ports 7777–7786 and joins the first one it finds, or the last one it used. You can also type the host's address. Downloads go to your Downloads folder. Host and client need the same version.
 
-There's no PIN, so only turn sharing on at home or over a trusted VPN such as Tailscale or ZeroTier. Other safeguards:
+The page opens on the world that's currently being played, detected from the newest `<session>_autosave_<n>.sav`. The host can pick another one under **Imports go to**.
+
+There's no PIN, so anyone on your network can change your blueprints while sharing is on. Only turn it on at home or over a trusted VPN such as Tailscale or ZeroTier. Other safeguards:
 - The server only runs while sharing is on.
-- It only serves blueprint files, and it rejects path tricks, DNS rebinding and cross-site posts.
+- It only runs the library's own commands, always on the shared folder, and rejects path tricks, DNS rebinding and cross-site posts.
 - It refuses links that point at your own network.
 
 ## Development
@@ -151,8 +154,7 @@ app/
     src/resolve.rs        link import: download, page links, link-preview tags, safety checks
     src/meta.rs           details and picture store, keyed by .sbp hash
     src/sbp.rs            .sbp/.sbpcfg reader: size, cost, buildings, description
-    src/share.rs          Share on LAN web server
-    src/share.html        the page friends see
+    src/share.rs          Share on LAN web server (serves the app's own UI)
     tauri.conf.json       app config and updater public key
 design/                   the original Claude Design prototype and chats
 .github/workflows/        CI build and release

@@ -14,7 +14,8 @@ export function CopyDrawer({ open, items, sessions, defaultTarget, onClose, onRe
   sessions: string[]; defaultTarget: string | null;
   onClose: () => void; onRemove: (id: string) => void;
   onCopy: (target: string) => Promise<Outcome[]>;
-  onOpenTarget: (target: string) => void;
+  /** desktop app only */
+  onOpenTarget?: (target: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [target, setTarget] = useState<string>('');
@@ -121,7 +122,7 @@ export function CopyDrawer({ open, items, sessions, defaultTarget, onClose, onRe
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600,
                   color: copied ? 'var(--ok)' : 'var(--warn)' }}>
                   {copied ? <IcCheck size={18} /> : <IcWarn size={18} />}Copied {copied} of {snapshot.length}</div>
-                <Btn variant="ghost" icon={IcFolder} onClick={() => onOpenTarget(target)}>Open</Btn>
+                {onOpenTarget && <Btn variant="ghost" icon={IcFolder} onClick={() => onOpenTarget(target)}>Open</Btn>}
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>
             : <Btn variant="primary" full size="lg" icon={IcCopy} disabled={!copyable || !target || phase === 'running'} onClick={run}>
                 {phase === 'running' ? 'Copying…' : `Copy ${copyable} to ${target || '…'}`}</Btn>}

@@ -1,6 +1,76 @@
-// platform.ts — thin bridge to the Tauri host; falls back to browser APIs under `npm run dev`
+// platform.ts — thin bridge to the host: Tauri in the desktop app, HTTP on the share page; browser fallbacks under `npm run dev`
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
+
+/** Opened in a browser from the host's share server: the same app, on the host's blueprints. */
+export const isWeb = !isTauri() && !!document.querySelector('meta[name="fa-web"]');
+
+/**
+ * The desktop app is a host (its own game folder, shared on the LAN) or a client (another PC's library,
+ * through that PC's share server). Only Windows has the game, so other systems are always clients.
+ */
+export type AppMode = 'host' | 'client';
+const MODE_KEY = 'fa-mode';
+export const canHost = isTauri() && /Windows/.test(navigator.userAgent);
+export const appMode: AppMode = !isTauri() || (canHost && (() => { try { return localStorage.getItem(MODE_KEY) !== 'client'; } catch { return true; } })())
+  ? 'host' : 'client';
+export const isClient = isTauri() && appMode === 'client';
+/** Working on another PC's library (client app or share page): host-only features are hidden. */
+export const remote = isWeb || isClient;
+/** Real files (the desktop app, or a host through the share server) rather than sample data. */
+export const hasHost = () => isTauri() || isWeb;
+
+/** Switch this PC between host and client (Windows only). Restarts the window. */
+export async function setAppMode(mode: AppMode) {
+  if (mode === 'client') await shareStop().catch(() => {}); // a client doesn't share its own folder
+  try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
+  location.reload();
+}
+
+/* client mode: which host this app works on (set by ClientGate before the library loads) */
+/** outdated: an older Factory Archive is sharing there; it must be updated before it can be joined */
+export interface FoundHost { url: string; name: string; version: string; outdated: boolean }
+let hostUrl: string | null = null;
+export const setHostUrl = (url: string | null) => { hostUrl = url; };
+export const discoverHosts = () => invoke<FoundHost[]>('discover_hosts');
+export const hostHello = (url: string) => invoke<FoundHost>('host_hello', { url });
+
+/** Run a library command: `invoke` on a host, through the host's share server on a client or the share page. */
+export async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (isClient) {
+    if (!hostUrl) throw new Error('Not connected to a host yet.');
+    return invoke<T>('host_call', { url: hostUrl, cmd, args });
+  }
+  if (isTauri()) return invoke<T>(cmd, args);
+  const res = await fetch(`/api/call/${cmd}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? `The host didn't answer (${res.status})`);
+  return body as T;
+}
+
+/**
+ * Save a blueprint's files from the host to this computer: the client app puts them in Downloads
+ * (and returns that folder), the share page lets the browser download them.
+ */
+export async function downloadBlueprint(session: string, name: string, hasCfg: boolean): Promise<string | null> {
+  if (isClient) return invoke<string>('host_download', { url: hostUrl, session, name, hasCfg });
+  for (const ext of hasCfg ? ['sbp', 'sbpcfg'] : ['sbp']) {
+    const a = document.createElement('a');
+    a.href = `/api/file/${encodeURIComponent(session)}/${encodeURIComponent(`${name}.${ext}`)}`;
+    a.download = `${name}.${ext}`;
+    a.click();
+  }
+  return null;
+}
+
+/** Share page: the browser's file picker for .sbp / .sbpcfg files (empty if cancelled). */
+export function pickFilesInBrowser(): Promise<File[]> {
+  return new Promise(resolve => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', multiple: true, accept: '.sbp,.sbpcfg' });
+    input.onchange = () => resolve([...(input.files ?? [])].filter(f => isBlueprintFile(f.name)));
+    input.click();
+  });
+}
 
 export async function copyText(text: string): Promise<boolean> {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
@@ -29,8 +99,8 @@ const PREVIEW_FOLDERS: GameFolder[] = [
  * the Windows profile folder.
  */
 export async function findGameFolders(): Promise<GameFolder[]> {
-  if (!isTauri()) return PREVIEW_FOLDERS;
-  try { return await invoke<GameFolder[]>('game_folders'); } catch (e) { console.error(e); return []; }
+  if (!hasHost()) return PREVIEW_FOLDERS;
+  try { return await call<GameFolder[]>('game_folders'); } catch (e) { console.error(e); return []; }
 }
 
 /** Let the user point at a blueprints folder by hand (e.g. a copy synced from another PC). */
@@ -53,7 +123,7 @@ export function tailPath(p: string, segments = 4) {
 export interface ShareInfo { port: number; urls: string[]; root: string }
 export interface SharedImport { name: string; session: string }
 
-export const canShare = () => isTauri();
+export const canShare = () => isTauri() && !remote;
 
 export async function shareStart(root: string): Promise<ShareInfo> {
   return invoke<ShareInfo>('share_start', { root });
@@ -77,8 +147,8 @@ export interface SessionsInfo {
   sessions: string[];
 }
 export async function listSessions(root: string): Promise<SessionsInfo> {
-  if (!isTauri()) return { detected: { name: 'Preview World', source: 'autosave' }, pinned: null, sessions: ['Preview World', 'Old World'] };
-  return invoke<SessionsInfo>('sessions', { root });
+  if (!hasHost()) return { detected: { name: 'Preview World', source: 'autosave' }, pinned: null, sessions: ['Preview World', 'Old World'] };
+  return call<SessionsInfo>('sessions', { root });
 }
 /** Pin friends' imports to one session; null follows the detected current world. */
 export async function shareSetSession(name: string | null): Promise<void> {
@@ -111,21 +181,21 @@ export async function importFiles(root: string, session: string, paths: string[]
 /** Files dropped onto the window (read in the page, sent as bytes). */
 export async function importDropped(root: string, session: string, files: File[]): Promise<Outcome[]> {
   const payload = await Promise.all(files.map(async f => [f.name, Array.from(new Uint8Array(await f.arrayBuffer()))] as const));
-  return invoke<Outcome[]>('import_bytes', { root, session, files: payload });
+  return call<Outcome[]>('import_bytes', { root, session, files: payload });
 }
 
 export async function copyBlueprints(root: string, items: [session: string, name: string][], target: string): Promise<Outcome[]> {
-  return invoke<Outcome[]>('copy_blueprints', { root, items, target });
+  return call<Outcome[]>('copy_blueprints', { root, items, target });
 }
 
 /** Rename a blueprint's .sbp (and .sbpcfg) inside its world session. Refuses to overwrite. */
 export async function renameBlueprint(root: string, session: string, from: string, to: string): Promise<void> {
-  await invoke('rename_blueprint', { root, session, from, to });
+  await call('rename_blueprint', { root, session, from, to });
 }
 
 /** Move a blueprint's .sbp (and .sbpcfg) to the system Trash / Recycle Bin. */
 export async function deleteBlueprint(root: string, session: string, name: string): Promise<void> {
-  await invoke('delete_blueprint', { root, session, name });
+  await call('delete_blueprint', { root, session, name });
 }
 
 /** Yes/no question: a native dialog in the desktop app, `confirm()` in the browser preview. */
@@ -137,7 +207,7 @@ export async function confirmAction(message: string, title: string, okLabel: str
 
 /** Re-read page details and pictures of every blueprint imported from a link. Game files are untouched. */
 export async function refetchDetails(): Promise<{ updated: number; failed: number }> {
-  return invoke('refetch_details');
+  return call('refetch_details');
 }
 
 export const isBlueprintFile = (name: string) => /\.(sbp|sbpcfg)$/i.test(name);
@@ -157,17 +227,17 @@ export type CategoryEdit =
 
 /** The world's categories with `edits` applied in memory. Nothing is written. */
 export async function categoryTree(root: string, session: string, edits: CategoryEdit[]): Promise<CategoryView[]> {
-  if (!isTauri()) {
+  if (!hasHost()) {
     if (edits.length) throw new Error('Editing categories works in the desktop app');
     return [{ name: '', subs: [{ name: '', blueprints: [] }] }, { name: 'Production', subs: [{ name: 'Steel', blueprints: [] }] }];
   }
-  return invoke<CategoryView[]>('category_tree', { root, session, edits });
+  return call<CategoryView[]>('category_tree', { root, session, edits });
 }
 
 /** Write the edits into a new save next to the world's newest one. Returns the new file's name. */
 export async function editCategories(root: string, session: string, edits: CategoryEdit[]): Promise<string> {
-  if (!isTauri()) throw new Error('Editing categories works in the desktop app');
-  return invoke<string>('edit_categories', { root, session, edits });
+  if (!hasHost()) throw new Error('Editing categories works in the desktop app');
+  return call<string>('edit_categories', { root, session, edits });
 }
 
 /** Last report from the Factory Archive Live mod; null if it never ran with this folder. */
@@ -217,7 +287,7 @@ export async function uninstallLiveMod(game: string): Promise<boolean> {
 export interface SaveAccount { id: string; hasWorld: boolean; name: string | null; save: string | null }
 /** Account save folders on this PC, and which one holds the world's newest save. */
 export async function saveAccounts(root: string, session: string): Promise<SaveAccount[]> {
-  return isTauri() ? invoke<SaveAccount[]>('save_accounts', { root, session }) : [];
+  return isTauri() && !remote ? invoke<SaveAccount[]>('save_accounts', { root, session }) : [];
 }
 /** Copy the world's newest save into `account`'s save folder. Returns the file's name. */
 export async function copySaveToAccount(root: string, session: string, account: string): Promise<string> {

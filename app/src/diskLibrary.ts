@@ -1,6 +1,7 @@
 // diskLibrary.ts — the real library: .sbp files in the game's blueprints folder, per world session
 import { useCallback, useEffect, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
+import { call, hasHost } from './platform';
 import type { Blueprint, SourceId } from './data';
 
 export interface BlueprintMeta {
@@ -64,9 +65,9 @@ export function useDiskLibrary(root: string | null, refreshKey: unknown) {
 
   /** Rescan the folder; resolves to the number of blueprints found. */
   const load = useCallback(async (): Promise<number> => {
-    if (!isTauri() || !root) return 0;
+    if (!hasHost() || !root) return 0;
     try {
-      const list = await invoke<DiskSession[]>('library', { root });
+      const list = await call<DiskSession[]>('library', { root });
       setSessions(list.map(s => s.name));
       setCategoryErrors(list.filter(s => s.categoriesError).map(s => `${s.name}: ${s.categoriesError}`));
       const next = list.flatMap(s => s.blueprints.filter(f => f.hasSbp).map(f => toBlueprint(s.name, f)));
@@ -76,11 +77,19 @@ export function useDiskLibrary(root: string | null, refreshKey: unknown) {
   }, [root]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
-  // pick up blueprints saved in-game while the app was in the background
+  // pick up blueprints saved in-game (or changed by the host or friends) while the window was in the background
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!hasHost()) return;
     addEventListener('focus', load);
     return () => removeEventListener('focus', load);
+  }, [load]);
+  // desktop app: a friend changed something through the share page
+  useEffect(() => {
+    if (!isTauri()) return;
+    let off: (() => void) | undefined, dead = false;
+    import('@tauri-apps/api/event').then(({ listen }) => listen('library-changed', () => { load(); }))
+      .then(u => { if (dead) u(); else off = u; });
+    return () => { dead = true; off?.(); };
   }, [load]);
 
   return { items, sessions, categoryErrors, reload: load };

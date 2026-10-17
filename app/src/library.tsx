@@ -7,12 +7,13 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { installLiveMod, liveModState, uninstallLiveMod, modStatus, openFolder, saveAccounts, tailPath, type LiveModState, type ModStatus, type SaveAccount } from './platform';
+import { canHost, installLiveMod, isClient, liveModState, remote, setAppMode, uninstallLiveMod, modStatus, openFolder, saveAccounts, tailPath, type LiveModState, type ModStatus, type SaveAccount } from './platform';
 import type { GameFolderState } from './gameFolder';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ShareStateUI } from './share';
 import type { UpdaterState } from './updater';
 import { ShareCard } from './shareCard';
+import { ConnectCard } from './client';
 
 export interface Filters {
   tags: string[];
@@ -251,14 +252,20 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
         </>}
       </div>
 
-      <div style={{ padding: '0 12px 10px' }}>
+      {/* the share page has no multiplayer controls; a client shows the host it's on */}
+      {(isClient || !remote) && <div style={{ padding: '0 12px 10px' }}>
         <div className="tlabel" style={{ padding: '0 0 8px 6px' }}>Multiplayer</div>
-        <ShareCard share={share} />
-      </div>
+        {isClient ? <ConnectCard /> : <ShareCard share={share} />}
+        {canHost && !remote && <button onClick={() => setAppMode('client')}
+          title="Work on another PC's blueprints instead, through its Share on LAN"
+          style={{ padding: '6px 0 0 6px', background: 'none', border: 'none', color: 'var(--text-mute)', fontSize: 10, textDecoration: 'underline' }}>
+          Use this PC as a client</button>}
+      </div>}
 
       {/* sync footer */}
       <div style={{ padding: 12, borderTop: '1px solid var(--border-soft)', display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <button onClick={onPickFolder} title={current ? `${current.path}\nClick to choose another folder` : 'Choose the blueprints folder'}
+        <button onClick={onPickFolder} disabled={remote}
+          title={remote ? "You're browsing the host's blueprints folder" : current ? `${current.path}\nClick to choose another folder` : 'Choose the blueprints folder'}
           style={{ flex: 1, minWidth: 0, padding: '10px 11px', borderRadius: 'var(--r)', background: 'var(--panel)',
           border: '1px solid var(--border)', textAlign: 'left', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
@@ -271,11 +278,11 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
             {!current ? 'Choose folder…' : tailPath(current.path, 2)}</div>
         </button>
         <div style={{ width: 30, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <button onClick={openCurrent} disabled={!current}
+          {!remote && <button onClick={openCurrent} disabled={!current}
             title={targetSession ? `Open the "${targetSession}" blueprint folder` : 'Open the blueprint folder'}
             aria-label="Open blueprint folder" style={footerBtn}>
             <IcFolder size={14} />
-          </button>
+          </button>}
           <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} style={footerBtn}>
             {theme === 'dark' ? <IcSun size={14} /> : <IcMoon size={14} />}
@@ -287,8 +294,8 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
           </button>}
         </div>
       </div>
-      {current && session && isTauri() && <CurrentSaveRow root={current.path} session={session} />}
-      {current && <ModStatusRow root={current.path} />}
+      {current && session && isTauri() && !remote && <CurrentSaveRow root={current.path} session={session} />}
+      {current && !remote && <ModStatusRow root={current.path} />}
       {folderError && <div role="alert" style={{ padding: '0 12px 10px', marginTop: -4, fontSize: 10.5, lineHeight: 1.4,
         color: 'var(--warn)' }}>{folderError}</div>}
     </aside>

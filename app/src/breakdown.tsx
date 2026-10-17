@@ -1,6 +1,6 @@
 // breakdown.tsx — what a blueprint contains (size, material cost, buildings), read from its own files
 import { useEffect, useState, type ReactNode } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { call, hasHost } from './platform';
 import type { Blueprint } from './data';
 import type { Icon } from './icons';
 import { IcCube, IcDimensions, IcMachine, IcMaterial, IcWarn } from './icons';
@@ -32,10 +32,10 @@ export function useBlueprintInfo(bp: Blueprint, root: string | null) {
   useEffect(() => {
     setInfo(null);
     if (!bp.onDisk || !bp.session) return;
-    if (!isTauri()) { setInfo(PREVIEW); return; }
+    if (!hasHost()) { setInfo(PREVIEW); return; }
     if (!root) return;
     let live = true;
-    invoke<BlueprintInfo>('blueprint_info', { root, session: bp.session, name: bp.name })
+    call<BlueprintInfo>('blueprint_info', { root, session: bp.session, name: bp.name })
       .then(i => { if (live) setInfo(i); })
       .catch(e => { if (live) setInfo({ breakdown: null, error: String(e), config: null }); });
     return () => { live = false; };

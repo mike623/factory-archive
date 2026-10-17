@@ -6,7 +6,7 @@ import {
   IcArrowLeft, IcCalendar, IcFolder, IcCheck, IcChevron, IcCopy, IcDimensions, IcDownload, IcExternal, IcFile, IcInfo,
   IcLayers, IcLink, IcMachine, IcMaterial, IcPencil, IcPower, IcRefresh, IcStar, IcTag, IcTrash, IcUpload, IcUser, IcWarn, type Icon,
 } from './icons';
-import { copyText, openExternal } from './platform';
+import { copyText, openExternal, remote } from './platform';
 import { BlueprintImage, useBlueprintImage } from './blueprintImage';
 import { BreakdownSection, ConfigSwatch, useBlueprintInfo } from './breakdown';
 import { MoveControl, type CategoryEditsState } from './categoryEditor';
@@ -43,7 +43,9 @@ function DetailHeader({ bp, onBack, fav, onToggleFav, onExport, onOpenFolder, on
       <Btn variant="ghost" icon={IcExternal} onClick={() => bp.url && openExternal(bp.url)} disabled={!bp.url}
         title={bp.url ? `Open ${bp.url}` : 'No source link for local imports'}>Open link</Btn>
       {bp.onDisk
-        ? <Btn variant="primary" icon={IcFolder} onClick={onOpenFolder}>Open folder</Btn>
+        ? remote
+          ? <Btn variant="primary" icon={IcDownload} onClick={onOpenFolder} title="Save the blueprint's files from the host to this computer">Download</Btn>
+          : <Btn variant="primary" icon={IcFolder} onClick={onOpenFolder}>Open folder</Btn>
         : <Btn variant="primary" icon={IcDownload} onClick={onExport}>Export to game folder</Btn>}
     </div>
   );
@@ -259,7 +261,9 @@ export function BlueprintDetail({ bp, onBack, onExport, onOpenFolder, onRename, 
                 color: 'var(--info)', lineHeight: 1.5 }}><IcRefresh size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>A newer revision is available from {src.label}.</span></div>}
               {bp.onDisk
-                ? <Btn variant="primary" full icon={IcFolder} onClick={() => onOpenFolder(bp)}>Open in {bp.session}</Btn>
+                ? remote
+                  ? <Btn variant="primary" full icon={IcDownload} onClick={() => onOpenFolder(bp)}>Download from {bp.session}</Btn>
+                  : <Btn variant="primary" full icon={IcFolder} onClick={() => onOpenFolder(bp)}>Open in {bp.session}</Btn>
                 : <Btn variant="primary" full icon={IcDownload} onClick={() => onExport(bp)}>
                     {bp.status === 'installed' ? 'Re-export to folder' : bp.status === 'update' ? 'Update in folder' : 'Export to game folder'}</Btn>}
             </div>

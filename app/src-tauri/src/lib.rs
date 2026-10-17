@@ -1,4 +1,5 @@
 mod blueprints;
+mod client;
 mod meta;
 mod modinstall;
 mod sav;
@@ -74,11 +75,63 @@ fn open_folder(app: tauri::AppHandle, root: String, session: Option<String>) -> 
 /// Start sharing `root` (a game's `blueprints` folder) with players on the local network.
 #[tauri::command]
 fn share_start(app: tauri::AppHandle, state: tauri::State<'_, ShareState>, root: String) -> Result<ShareInfo, String> {
-    let app2 = app.clone();
-    state.start(PathBuf::from(root), move |ev, bp| {
-        let _ = app.state::<MetaStore>().save_resolved(bp);
-        let _ = app.emit("share-imported", ev);
-    }, move |url, dir| app2.state::<MetaStore>().imported_from(url, dir))
+    let name = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "Host".into());
+    let hello = serde_json::json!({ "app": "factory-archive", "name": name, "version": app.package_info().version.to_string() });
+    let (ui, calls) = (app.clone(), app);
+    state.start(PathBuf::from(root), share::WebHost {
+        hello,
+        asset: Box::new(move |path| ui.asset_resolver().get(path.to_string()).map(|a| (a.bytes, a.mime_type))),
+        call: Box::new(move |cmd, args, root| web_call(&calls, cmd, &args, root)),
+    })
+}
+
+/// One argument of a web page call.
+fn arg<T: serde::de::DeserializeOwned>(args: &serde_json::Value, key: &str) -> Result<T, String> {
+    serde_json::from_value(args.get(key).cloned().unwrap_or_default()).map_err(|_| format!("missing or invalid \"{key}\""))
+}
+
+/// The commands friends' browsers can run through the share page: everything in the library except
+/// the host's own things (picking folders, opening Explorer, accounts and save copies, the Live mod,
+/// sharing itself). `root` is always the shared folder, whatever the page sent. Names are validated
+/// by the commands themselves, as for the desktop UI.
+fn web_call(app: &tauri::AppHandle, cmd: &str, a: &serde_json::Value, root: &Path) -> Result<serde_json::Value, String> {
+    use serde_json::{json, to_value};
+    let r = root.to_string_lossy().into_owned();
+    let added = |session: &str, names: &mut dyn Iterator<Item = String>| for name in names {
+        let _ = app.emit("share-imported", share::Imported { name, session: session.to_string() });
+    };
+    let v = match cmd {
+        // the page only shows that it's the host's folder, not where it is
+        "game_folders" => Ok(json!([{ "kind": "native", "label": "Host", "path": "Shared by the host", "found": true }])),
+        "sessions" => Ok(sessions(app.state(), r)),
+        "library" => to_value(library(app.state(), app.state(), r)),
+        "blueprint_info" => to_value(blueprint_info(r, arg(a, "session")?, arg(a, "name")?)),
+        "blueprint_image" => to_value(blueprint_image(app.state(), arg(a, "key")?)),
+        "link_imported" => to_value(link_imported(app.state(), r, arg(a, "session")?, arg(a, "url")?)),
+        "category_tree" => to_value(category_tree(r, arg(a, "session")?, arg(a, "edits")?)?),
+        "import_bytes" => {
+            let session: String = arg(a, "session")?;
+            let out = import_bytes(app.state(), r, session.clone(), arg(a, "files")?);
+            added(&session, &mut out.iter().filter(|o| o.ok).map(|o| o.name.clone()));
+            to_value(out)
+        }
+        "import_link" => {
+            let out = tauri::async_runtime::block_on(import_link(app.clone(), r, arg(a, "session")?, arg(a, "url")?))?;
+            added(&out.session, &mut std::iter::once(out.name.clone()));
+            to_value(out)
+        }
+        "copy_blueprints" => to_value(copy_blueprints(r, arg(a, "items")?, arg(a, "target")?)),
+        "rename_blueprint" => to_value(rename_blueprint(r, arg(a, "session")?, arg(a, "from")?, arg(a, "to")?)?),
+        "delete_blueprint" => to_value(delete_blueprint(r, arg(a, "session")?, arg(a, "name")?)?),
+        "edit_categories" => to_value(edit_categories(r, arg(a, "session")?, arg(a, "edits")?)?),
+        "refetch_details" => to_value(tauri::async_runtime::block_on(refetch_details(app.clone()))?),
+        _ => return Err(format!("{cmd} isn't available on the web page")),
+    }.map_err(|e| e.to_string())?;
+    // the host's window re-reads the library after a friend changed something
+    if !matches!(cmd, "game_folders" | "sessions" | "library" | "blueprint_info" | "blueprint_image" | "link_imported" | "category_tree") {
+        let _ = app.emit("library-changed", ());
+    }
+    Ok(v)
 }
 
 #[tauri::command]
@@ -326,6 +379,51 @@ async fn refetch_details(app: tauri::AppHandle) -> Result<RefetchResult, String>
     .map_err(|e| e.to_string())
 }
 
+/* ---------- client mode: working on another PC's library through its share server ---------- */
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+/// Factory Archive hosts sharing on this network, best guess first.
+#[tauri::command]
+async fn discover_hosts() -> Result<Vec<client::FoundHost>, String> {
+    blocking(|| Ok(client::discover())).await
+}
+
+/// Check that a typed or remembered address is a Factory Archive host.
+#[tauri::command]
+async fn host_hello(url: String) -> Result<client::FoundHost, String> {
+    blocking(move || client::hello(&url)).await
+}
+
+/// Run a library command on the host.
+#[tauri::command]
+async fn host_call(url: String, cmd: String, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    blocking(move || client::call(&url, &cmd, &args)).await
+}
+
+/// Download a blueprint's files from the host into this PC's Downloads folder (never overwriting).
+/// Returns the folder they went to.
+#[tauri::command]
+async fn host_download(app: tauri::AppHandle, url: String, session: String, name: String, has_cfg: bool) -> Result<String, String> {
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    blocking(move || {
+        let exts: &[&str] = if has_cfg { &["sbp", "sbpcfg"] } else { &["sbp"] };
+        // fetch everything first, so a failure doesn't leave half a blueprint behind
+        let files = exts.iter().map(|ext| client::fetch_file(&url, &session, &name, ext).map(|b| (*ext, b))).collect::<Result<Vec<_>, _>>()?;
+        for (ext, bytes) in files {
+            let path = dir.join(format!("{name}.{ext}"));
+            let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e| match e.kind() {
+                std::io::ErrorKind::AlreadyExists => format!("{name}.{ext} is already in your Downloads folder."),
+                _ => e.to_string(),
+            })?;
+            std::io::Write::write_all(&mut f, &bytes).map_err(|e| e.to_string())?;
+        }
+        Ok(dir.to_string_lossy().into_owned())
+    }).await
+}
+
 /// Pin friends' imports to a session (`None` = follow the detected current world).
 #[tauri::command]
 fn share_set_session(state: tauri::State<'_, ShareState>, name: Option<String>) -> Result<(), String> {
@@ -409,7 +507,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, discover_hosts, host_hello, host_call, host_download, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

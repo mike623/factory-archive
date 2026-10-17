@@ -14,9 +14,8 @@ import { toBlueprint, useDiskLibrary } from './diskLibrary';
 import { CopyDrawer } from './copyDrawer';
 import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
-import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  confirmAction, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
+  call, confirmAction, downloadBlueprint, hasHost, isClient, pickFilesInBrowser, remote, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
   type Outcome,
 } from './platform';
 import { useShare } from './share';
@@ -25,6 +24,7 @@ import { UpdateBanner } from './UpdateBanner';
 import { useUpdater } from './updater';
 import { clearImageCache } from './blueprintImage';
 import { BatchMove, CategoryEditor, categoryOf, useCategoryEdits } from './categoryEditor';
+import { ClientGate } from './client';
 
 // `?empty` starts with an empty library so the first-run screen can be previewed
 const START_EMPTY = new URLSearchParams(location.search).has('empty');
@@ -75,7 +75,12 @@ function matches(b: Blueprint, query: string, source: SourceId | null, f: Filter
   return true;
 }
 
+/** A client joins a host first; the library then works on that host's files. */
 export default function App() {
+  return isClient ? <ClientGate><Library /></ClientGate> : <Library />;
+}
+
+function Library() {
   const [theme, setTheme] = useTheme();
   // browser preview: sample data spread over two pretend worlds; the desktop app reads real files instead
   const [library, setLibrary] = useState<Blueprint[]>(() => START_EMPTY ? [] : PREVIEW_DISK ? DISK_DEMO :
@@ -83,7 +88,7 @@ export default function App() {
   // remembered on this machine between launches
   const [imported, setImported] = usePersistent<string[]>('fa-imported', () => []);
   const [favList, setFavList] = usePersistent<string[]>('fa-favorites',
-    () => isTauri() ? [] : SAMPLE_LIBRARY.filter(b => b.status === 'installed').map(b => b.id));
+    () => hasHost() ? [] : SAMPLE_LIBRARY.filter(b => b.status === 'installed').map(b => b.id));
   const favs = useMemo(() => new Set(favList), [favList]);
   const notices = useNotices();
   const updater = useUpdater();
@@ -167,7 +172,14 @@ export default function App() {
   const detailBp = detailId ? libItems.find(b => b.id === detailId) ?? null : null;
 
   const resetFilters = () => { setFilters(EMPTY_FILTERS); setQuery(''); setSourceFilter(null); setSessionChoice(undefined); };
+  // on the share page the files are on the host, so "open" downloads them instead
   const openBlueprintFolder = (b: Blueprint) => {
+    if (remote) {
+      if (b.session) downloadBlueprint(b.session, b.name, b.files.sbpcfg).then(
+        dir => dir && notices.push({ tone: 'ok', title: `Downloaded ${b.name}`, detail: `Saved to ${dir}` }),
+        e => notices.push({ tone: 'warn', title: `Couldn't download ${b.name}`, detail: String(e).replace(/^Error: /, '') }));
+      return;
+    }
     if (gameFolder.current) openFolder(gameFolder.current.path, b.session).catch(console.error);
   };
   const rememberImported = (ids: string[]) => setImported(list => [...ids, ...list.filter(x => !ids.includes(x))].slice(0, 100));
@@ -189,14 +201,14 @@ export default function App() {
     const root = gameFolder.current?.path;
     if (!root) throw new Error('Satisfactory folder not found. Choose it with the folder card in the sidebar.');
     if (!importTarget) throw new Error('Pick a world session in the filters first.');
-    const r = await invoke<LinkImport>('import_link', { root, session: importTarget, url });
+    const r = await call<LinkImport>('import_link', { root, session: importTarget, url });
     rememberImported([`disk:${r.session}/${r.name}`]);
     disk.reload();
     return r;
   };
   const findImported = useCallback(async (url: string) => {
     const root = gameFolder.current?.path;
-    return root && importTarget ? invoke<string | null>('link_imported', { root, session: importTarget, url }) : null;
+    return root && importTarget ? call<string | null>('link_imported', { root, session: importTarget, url }) : null;
   }, [gameFolder.current?.path, importTarget]);
   const [refetching, setRefetching] = useState(false);
   const refetchAll = async () => {
@@ -215,6 +227,11 @@ export default function App() {
     setRefetching(false);
   };
   const browseFiles = async () => {
+    if (remote) {
+      const files = await pickFilesInBrowser();
+      if (files.length) addFiles((root, session) => importDropped(root, session, files));
+      return;
+    }
     const paths = await pickBlueprintFiles();
     if (paths.length) addFiles((root, session) => importFiles(root, session, paths));
   };
@@ -230,7 +247,7 @@ export default function App() {
 
   const renameBp = async (b: Blueprint, name: string) => {
     const newId = b.onDisk ? `disk:${b.session}/${name}` : b.id;
-    if (b.onDisk && isTauri()) {
+    if (b.onDisk && hasHost()) {
       const root = gameFolder.current?.path;
       if (!root || !b.session) throw new Error('Satisfactory folder not found');
       await renameBlueprint(root, b.session, b.name, name);
@@ -247,9 +264,10 @@ export default function App() {
 
   const deleteBp = async (b: Blueprint) => {
     const what = b.onDisk ? `"${b.name}" from ${b.session}` : `"${b.name}"`;
-    if (!await confirmAction(`Delete ${what}? Its files go to the Trash, so you can restore them from there.`, 'Delete blueprint', 'Delete')) return;
+    const bin = remote ? "the host's Trash" : 'the Trash';
+    if (!await confirmAction(`Delete ${what}? Its files go to ${bin}, so you can restore them from there.`, 'Delete blueprint', 'Delete')) return;
     try {
-      if (b.onDisk && isTauri()) {
+      if (b.onDisk && hasHost()) {
         const root = gameFolder.current?.path;
         if (!root || !b.session) throw new Error('Satisfactory folder not found');
         await deleteBlueprint(root, b.session, b.name);
@@ -261,7 +279,7 @@ export default function App() {
       setFavList(drop); setImported(drop);
       setSel(s => { const n = new Set(s); n.delete(b.id); return n; });
       setDetailId(d => d === b.id ? null : d);
-      notices.push({ tone: 'ok', title: `Deleted ${b.name}`, detail: b.onDisk ? 'Its files are in the Trash if you need them back.' : undefined });
+      notices.push({ tone: 'ok', title: `Deleted ${b.name}`, detail: b.onDisk ? `Its files are in ${bin} if you need them back.` : undefined });
     } catch (e) { notices.push({ tone: 'warn', title: `Couldn't delete ${b.name}`, detail: String(e) }); }
   };
 
@@ -271,7 +289,7 @@ export default function App() {
 
   // drop .sbp / .sbpcfg files anywhere on the window to add them to the current world
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!hasHost()) return;
     const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
     const over = (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); setDropping(true); } };
     const leave = (e: DragEvent) => { if (!e.relatedTarget) setDropping(false); };
@@ -309,7 +327,7 @@ export default function App() {
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
         theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={showSources} updater={updater}
-        onRefetch={isTauri() ? refetchAll : undefined} refetching={refetching} session={cats.session} />
+        onRefetch={hasHost() ? refetchAll : undefined} refetching={refetching} session={cats.session} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>
@@ -332,7 +350,7 @@ export default function App() {
                 session={{ options: sessionOptions, current: currentSession, value: sessionFilter, onChange: setSessionChoice }} />}
               <div className="grid-bg" style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: 'var(--bg)' }}>
                 {showEmpty
-                  ? <EmptyState onImport={() => setImportOpen(true)} onBrowse={isTauri() ? browseFiles : undefined} />
+                  ? <EmptyState onImport={() => setImportOpen(true)} onBrowse={hasHost() ? browseFiles : undefined} />
                   : scoped.length === 0
                     ? <NoResults title={`Nothing in ${NAV_TITLES[nav]} yet`}
                         hint={nav === 'import' ? 'Blueprints you import show up here.' : 'Star a blueprint from its detail page.'} />
@@ -382,12 +400,12 @@ export default function App() {
           disk.reload();
         }} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
-        onBrowse={isTauri() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
-        importLink={isTauri() ? importLink : undefined} findImported={isTauri() ? findImported : undefined} />
+        onBrowse={hasHost() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
+        importLink={hasHost() ? importLink : undefined} findImported={hasHost() ? findImported : undefined} />
       {copyMode
         ? <CopyDrawer open={exportOpen} items={selItems} sessions={sessionOptions.map(o => o.name)} defaultTarget={currentSession}
             onClose={() => { setExportOpen(false); }} onRemove={toggleSel} onCopy={copyToWorld}
-            onOpenTarget={t => gameFolder.current && openFolder(gameFolder.current.path, t).catch(console.error)} />
+            onOpenTarget={remote ? undefined : t => gameFolder.current && openFolder(gameFolder.current.path, t).catch(console.error)} />
         : <ExportDrawer open={exportOpen} items={selItems} gameFolder={gameFolder} onClose={() => setExportOpen(false)}
             onRemove={toggleSel} onExported={markInstalled} />}
     </div>

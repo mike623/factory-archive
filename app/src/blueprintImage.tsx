@@ -1,6 +1,6 @@
 // blueprintImage.tsx — a blueprint's saved web-page picture, or the generated placeholder art
 import { useEffect, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { call, hasHost } from './platform';
 import type { Blueprint } from './data';
 import { Thumb } from './components';
 
@@ -12,7 +12,7 @@ export const clearImageCache = () => cache.clear();
 function load(key: string) {
   let p = cache.get(key);
   if (!p) {
-    p = isTauri() ? invoke<string | null>('blueprint_image', { key }).catch(() => null) : Promise.resolve(null);
+    p = hasHost() ? call<string | null>('blueprint_image', { key }).catch(() => null) : Promise.resolve(null);
     cache.set(key, p);
   }
   return p;
