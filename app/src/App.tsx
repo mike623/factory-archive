@@ -309,7 +309,7 @@ export default function App() {
       <Sidebar route={nav} onNav={id => { setNav(id); setDetailId(null); }} counts={counts}
         sourceFilter={sourceFilter} onSourceFilter={setSourceFilter}
         theme={theme} onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} gameFolder={gameFolder} share={share} showSources={showSources} updater={updater}
-        onRefetch={isTauri() ? refetchAll : undefined} refetching={refetching} />
+        onRefetch={isTauri() ? refetchAll : undefined} refetching={refetching} session={cats.session} />
 
       {detailBp
         ? <main style={{ flex: 1, minWidth: 0, background: 'var(--bg)' }}>

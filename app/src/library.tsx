@@ -7,7 +7,7 @@ import {
   IcWrench, type Icon,
 } from './icons';
 import type { Theme } from './theme';
-import { installLiveMod, liveModState, uninstallLiveMod, modStatus, openFolder, tailPath, type LiveModState, type ModStatus } from './platform';
+import { installLiveMod, liveModState, uninstallLiveMod, modStatus, openFolder, saveAccounts, tailPath, type LiveModState, type ModStatus, type SaveAccount } from './platform';
 import type { GameFolderState } from './gameFolder';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ShareStateUI } from './share';
@@ -78,6 +78,28 @@ const olderThan = (a: string, b: string) => {
   return false;
 };
 
+/** The account and save file the world is read from (its newest save); category edits start from it. */
+function CurrentSaveRow({ root, session }: { root: string; session: string }) {
+  const [acc, setAcc] = useState<SaveAccount | null>(null);
+  useEffect(() => {
+    let alive = true;
+    // ponytail: polls so a new autosave shows up; each poll reads save headers only
+    const poll = () => saveAccounts(root, session).then(a => { if (alive) setAcc(a.find(x => x.hasWorld) ?? null); }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { alive = false; clearInterval(id); };
+  }, [root, session]);
+  if (!acc) return null;
+  const who = acc.name ? `${acc.name} · ${acc.id}` : acc.id;
+  return (
+    <div title={`Account: ${who}\nSave: ${acc.save}\nCategory changes start from this save.`}
+      style={{ padding: '0 12px 8px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, minWidth: 0 }}>
+      <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</span>
+      <span className="mono" style={{ fontSize: 9.5, color: 'var(--text-mute)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.save}</span>
+    </div>
+  );
+}
+
 /** Live mod status (once it has run with this folder), and one-click install / update from the copy bundled with the app. */
 function ModStatusRow({ root }: { root: string }) {
   const [status, setStatus] = useState<ModStatus | null>(null);
@@ -130,7 +152,7 @@ function ModStatusRow({ root }: { root: string }) {
 }
 
 /* ============ SIDEBAR ============ */
-export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater, onRefetch, refetching }: {
+export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, theme, onToggleTheme, gameFolder, share, showSources, updater, onRefetch, refetching, session }: {
   route: NavId; onNav: (id: NavId) => void; counts: Partial<Record<NavId, number>>;
   sourceFilter: SourceId | null; onSourceFilter: (s: SourceId | null) => void;
   theme: Theme; onToggleTheme: () => void; gameFolder: GameFolderState; share: ShareStateUI;
@@ -139,6 +161,8 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
   updater: UpdaterState;
   /** re-read page details and pictures of blueprints imported from links (desktop app only) */
   onRefetch?: () => void; refetching?: boolean;
+  /** world whose save is shown (the one in view, else the current one) */
+  session: string | null;
 }) {
   const { current, loading, pickCustom: onPickFolder } = gameFolder;
   const linked = !!current?.found;
@@ -263,6 +287,7 @@ export function Sidebar({ route, onNav, counts, sourceFilter, onSourceFilter, th
           </button>}
         </div>
       </div>
+      {current && session && isTauri() && <CurrentSaveRow root={current.path} session={session} />}
       {current && <ModStatusRow root={current.path} />}
       {folderError && <div role="alert" style={{ padding: '0 12px 10px', marginTop: -4, fontSize: 10.5, lineHeight: 1.4,
         color: 'var(--warn)' }}>{folderError}</div>}
