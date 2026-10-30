@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/mike623/factory-archive?label=download)](https://github.com/mike623/factory-archive/releases/latest)
 [![Desktop build](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml/badge.svg)](https://github.com/mike623/factory-archive/actions/workflows/desktop-build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20(client)-555)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20(CrossOver%20host%20or%20client)-555)
 
 ![Factory Archive library](docs/screenshots/library.png)
 
@@ -17,7 +17,7 @@
 - **Add files from disk.** Use **Browse**, or drag `.sbp`/`.sbpcfg` files anywhere onto the window.
 - **Copy blueprints between worlds**, e.g. bring your favorites into a new save.
 - **Share on LAN** for multiplayer. Friends on your network open the app itself in their browser, working on your blueprints: browse, download, add, rename, delete, copy between worlds and edit categories.
-- **Client mode.** The Mac app (and a Windows PC switched to client) finds a host sharing on your network and joins it on its own, so you manage the host's blueprints from your own app.
+- **Client mode.** Any app switched to client mode (and Macs without local game data) finds a host sharing on your network and joins it on its own, so you manage the host's blueprints from your own app.
 - **Installs the Live mod for you.** Releases include the companion mod: click **Install Live mod** (or **Update Live mod**) in the sidebar and the app puts it in your Steam or Epic game's `Mods` folder. You can also pick a downloaded `FactoryArchiveLive.zip`. **Uninstall Live mod** removes it again (SML and other mods stay).
 - **Updates itself.** Signed releases come from GitHub, with an **Install & restart** banner and a **Check for updates** button.
 - Search (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>), filters, favorites, grid and list views, and light and dark themes.
@@ -53,8 +53,9 @@ Satisfactory keeps blueprints **per world (save session)**, in one folder per se
 | Platform | Blueprints folder |
 | --- | --- |
 | Windows | `%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\blueprints\<session>\` |
+| macOS / CrossOver | `~/Library/Application Support/CrossOver/Bottles/<bottle>/drive_c/users/<user>/AppData/Local/FactoryGame/Saved/SaveGames/blueprints/<session>/` |
 
-The app finds this folder automatically. If it can't, click the folder card in the sidebar and choose it yourself. The folder button next to it opens the current world's folder in Explorer or Finder.
+The app finds this folder automatically. On macOS it checks CrossOver bottles for existing Satisfactory data and starts as a host when found; otherwise it starts as a client. A remembered client choice takes priority. Run the game once before detection. Automatic discovery covers CrossOver’s default Bottles folder. In host mode, click the folder card in the sidebar to choose a folder yourself. The folder button next to it opens the current world's folder in Explorer or Finder.
 
 > **After adding blueprints, reload the save.** Go to the main menu and load the world again; no restart is needed. For a dedicated server, stop the server before copying files in, then start it again.
 
@@ -94,7 +95,7 @@ Blueprints belong to the world, so in multiplayer they live on the **host's** ma
 2. Friends open it in any browser and get the same app, working on the host's blueprints folder. They can browse, **download** (instead of *Open folder*), add files or links, rename, delete (to the host's Trash), copy between worlds, edit categories and refetch details. Account and save copies, folder picking and the Live mod stay on the host.
 3. The host's window updates and shows what friends added. The host reloads the save to see it in the game.
 
-Instead of a browser, friends can use the app as a **client**. On a Mac it's always a client; on Windows, click **Use this PC as a client** under Multiplayer (the choice is remembered). A client searches the local network for a host on ports 7777–7786 and joins the first one it finds, or the last one it used. You can also type the host's address. Downloads go to your Downloads folder. Host and client need the same version.
+Instead of a browser, friends can use the app as a **client**. On Windows or a Mac with CrossOver game data, click **Use this PC as a client** under Multiplayer (the choice is remembered). A client searches the local network for a host on ports 7777–7786 and joins the first one it finds, or the last one it used. You can also type the host's address. Downloads go to your Downloads folder. Host and client need the same version.
 
 The page opens on the world that's currently being played, detected from the newest `<session>_autosave_<n>.sav`. The host can pick another one under **Imports go to**.
 
@@ -130,6 +131,7 @@ Browser-preview helpers: `?empty` shows the first-run screen, and `?disk` previe
 ```bash
 cd app/src-tauri && cargo test     # file handling, link import (local stand-in site), share server, metadata, .sbp parsing
 FA_SAMPLE_SBP=/path/to/a.sbp cargo test real_sample -- --nocapture   # optional: parse a real blueprint
+cd app && node --test src/platform.test.mjs  # host/client startup decisions
 cd app && npx tsc --noEmit         # TypeScript
 cd app && npx vite build           # frontend build
 ```

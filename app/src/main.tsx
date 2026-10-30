@@ -10,5 +10,8 @@ import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/jetbrains-mono/700.css';
 import './styles.css';
 import App from './App';
+import { initializePlatform } from './platform';
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+initializePlatform().then(() => {
+  createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+});

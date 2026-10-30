@@ -26,12 +26,21 @@ pub fn is_game_dir(p: &Path) -> bool {
 
 /// Steam and Epic installs found under the given `Program Files (x86)` and `ProgramData` folders.
 pub fn find_games(program_files_x86: &Path, program_data: &Path) -> Vec<PathBuf> {
+    find_games_with_paths(program_files_x86, program_data, |p| PathBuf::from(p))
+}
+
+pub fn find_bottle_games(bottle: &Path) -> Vec<PathBuf> {
+    find_games_with_paths(&bottle.join("drive_c/Program Files (x86)"), &bottle.join("drive_c/ProgramData"),
+        |p| crate::gamepaths::bottle_path(bottle, p))
+}
+
+fn find_games_with_paths(program_files_x86: &Path, program_data: &Path, path: impl Fn(&str) -> PathBuf) -> Vec<PathBuf> {
     let mut libs = vec![program_files_x86.join("Steam")];
     // ponytail: only the default Steam location's library list; other setups use the folder picker
     if let Ok(vdf) = fs::read_to_string(program_files_x86.join("Steam/steamapps/libraryfolders.vdf")) {
         for line in vdf.lines() {
             let parts: Vec<&str> = line.split('"').collect();
-            if parts.len() >= 4 && parts[1] == "path" { libs.push(PathBuf::from(parts[3].replace("\\\\", "\\"))); }
+            if parts.len() >= 4 && parts[1] == "path" { libs.push(path(&parts[3].replace("\\\\", "\\"))); }
         }
     }
     let mut out: Vec<PathBuf> = libs.iter().map(|l| l.join("steamapps").join("common").join("Satisfactory")).collect();
@@ -40,12 +49,13 @@ pub fn find_games(program_files_x86: &Path, program_data: &Path) -> Vec<PathBuf>
             let Ok(text) = fs::read_to_string(item.path()) else { continue };
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
             if v["DisplayName"].as_str().is_some_and(|n| n.starts_with("Satisfactory")) {
-                if let Some(p) = v["InstallLocation"].as_str() { out.push(PathBuf::from(p)); }
+                if let Some(p) = v["InstallLocation"].as_str() { out.push(path(p)); }
             }
         }
     }
     out.retain(|p| is_game_dir(p));
-    out.dedup();
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert(p.clone()));
     out
 }
 
@@ -242,6 +252,28 @@ mod tests {
         assert!(!r.version.is_empty());
         assert!(g.join("FactoryGame/Mods/FactoryArchiveLive/Binaries/Win64").is_dir());
         fs::remove_dir_all(&g).ok();
+    }
+
+    #[test]
+    fn finds_bottle_steam_and_epic_windows_paths() {
+        let bottle = std::env::temp_dir().join(format!("fa-bottle-games-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&bottle);
+        let steam = bottle.join("drive_c/Program Files (x86)/Steam");
+        let library = bottle.join("drive_c/Games/SteamLibrary");
+        let epic = bottle.join("drive_c/Games/Satisfactory");
+        for game in [steam.join("steamapps/common/Satisfactory"), library.join("steamapps/common/Satisfactory"), epic.clone()] {
+            fs::create_dir_all(game.join("FactoryGame/Binaries")).unwrap();
+        }
+        fs::write(steam.join("steamapps/libraryfolders.vdf"),
+            r#""path" "C:\\Program Files (x86)\\Steam"
+"path" "C:\\Games\\SteamLibrary""#).unwrap();
+        let manifests = bottle.join("drive_c/ProgramData/Epic/EpicGamesLauncher/Data/Manifests");
+        fs::create_dir_all(&manifests).unwrap();
+        fs::write(manifests.join("game.item"), serde_json::json!({
+            "DisplayName": "Satisfactory", "InstallLocation": r"C:\Games\Satisfactory"
+        }).to_string()).unwrap();
+        assert_eq!(find_bottle_games(&bottle), vec![steam.join("steamapps/common/Satisfactory"), library.join("steamapps/common/Satisfactory"), epic]);
+        fs::remove_dir_all(bottle).unwrap();
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod blueprints;
 mod client;
+mod gamepaths;
 mod meta;
 mod modinstall;
 mod sav;
@@ -14,43 +15,18 @@ use share::{ShareInfo, ShareState};
 use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
 
-/// A place Satisfactory keeps blueprints. The game stores them under
-/// `<LocalAppData>\FactoryGame\Saved\SaveGames\blueprints\<session name>\`.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GameFolder {
-    /// "native" (Windows)
-    kind: &'static str,
-    /// Human label, e.g. "Windows"
-    label: String,
-    /// The `blueprints` root
-    path: String,
-    /// Whether the game's `FactoryGame` data folder exists there
-    found: bool,
-}
-
-fn blueprints_under(local_app_data: &Path) -> PathBuf {
-    local_app_data
-        .join("FactoryGame")
-        .join("Saved")
-        .join("SaveGames")
-        .join("blueprints")
-}
-
-fn has_game_data(local_app_data: &Path) -> bool {
-    local_app_data.join("FactoryGame").is_dir()
-}
-
 /// Candidate blueprint folders on this machine, best match first.
 #[tauri::command]
-fn game_folders(app: tauri::AppHandle) -> Result<Vec<GameFolder>, String> {
-    let local = app.path().local_data_dir().map_err(|e| e.to_string())?;
-    Ok(vec![GameFolder {
-        kind: "native",
-        label: "Windows".into(),
-        path: blueprints_under(&local).to_string_lossy().into_owned(),
-        found: has_game_data(&local),
-    }])
+fn game_folders(app: tauri::AppHandle) -> Result<Vec<gamepaths::GameFolder>, String> {
+    if cfg!(target_os = "windows") {
+        let local = app.path().local_data_dir().map_err(|e| e.to_string())?;
+        Ok(vec![gamepaths::native(&local)])
+    } else if cfg!(target_os = "macos") {
+        let home = app.path().home_dir().map_err(|e| e.to_string())?;
+        Ok(gamepaths::crossover_folders(&home))
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 /// Open the blueprints folder (or one session inside it) in Explorer / Finder.
@@ -297,7 +273,9 @@ fn edit_categories(root: String, session: String, edits: Vec<savedit::Edit>) -> 
 fn save_accounts(root: String, session: String) -> Result<Vec<savedit::Account>, String> {
     if !blueprints::valid_component(&session) { return Err("invalid world name".into()); }
     // ponytail: Steam's default folder only; read the registry's SteamPath if people install it elsewhere
-    let vdf = std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Steam").join("config").join("loginusers.vdf"))
+    let bottle_steam = Path::new(&root).ancestors().find(|p| p.file_name().is_some_and(|n| n == "drive_c"))
+        .map(|p| p.join("Program Files (x86)"));
+    let vdf = bottle_steam.or_else(|| std::env::var_os("ProgramFiles(x86)").map(PathBuf::from)).map(|p| p.join("Steam").join("config").join("loginusers.vdf"))
         .filter(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.len() <= 1 << 20))
         .and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
     Ok(savedit::accounts(&PathBuf::from(root), &session, &savedit::steam_names(&vdf)))
@@ -443,7 +421,12 @@ fn mod_status(root: String) -> Option<blueprints::ModStatus> {
 
 /// Satisfactory installs (Steam, Epic) found on this PC, for installing the Live mod.
 #[tauri::command]
-fn game_installs() -> Vec<String> {
+fn game_installs(app: tauri::AppHandle) -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        return app.path().home_dir().ok().into_iter().flat_map(|home| gamepaths::bottles(&home))
+            .flat_map(|b| modinstall::find_bottle_games(&b))
+            .map(|p| p.to_string_lossy().into_owned()).collect();
+    }
     let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
     let (Some(pf), Some(pd)) = (env("ProgramFiles(x86)"), env("ProgramData")) else { return Vec::new() };
     modinstall::find_games(&pf, &pd).into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
@@ -468,7 +451,7 @@ struct LiveModState {
 #[tauri::command]
 fn live_mod_state(app: tauri::AppHandle) -> LiveModState {
     let bundled = bundled_mod(&app).and_then(|p| std::fs::read(p).ok()).and_then(|z| modinstall::version_of(&z).ok());
-    let game = game_installs().into_iter().next();
+    let game = game_installs(app).into_iter().next();
     let installed = game.as_deref().and_then(|g| modinstall::installed_version(Path::new(g)));
     LiveModState { bundled, game, installed }
 }

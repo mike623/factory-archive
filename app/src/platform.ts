@@ -7,20 +7,31 @@ export const isWeb = !isTauri() && !!document.querySelector('meta[name="fa-web"]
 
 /**
  * The desktop app is a host (its own game folder, shared on the LAN) or a client (another PC's library,
- * through that PC's share server). Only Windows has the game, so other systems are always clients.
+ * through that PC's share server). Windows and Macs with CrossOver game data can host.
  */
 export type AppMode = 'host' | 'client';
 const MODE_KEY = 'fa-mode';
-export const canHost = isTauri() && /Windows/.test(navigator.userAgent);
-export const appMode: AppMode = !isTauri() || (canHost && (() => { try { return localStorage.getItem(MODE_KEY) !== 'client'; } catch { return true; } })())
-  ? 'host' : 'client';
-export const isClient = isTauri() && appMode === 'client';
-/** Working on another PC's library (client app or share page): host-only features are hidden. */
-export const remote = isWeb || isClient;
+export let canHost = false;
+export let appMode: AppMode = 'host';
+export let isClient = false;
+/** Working on another computer's library: host-only features are hidden. */
+export let remote = isWeb;
+
+/** Probe local game data before rendering, without routing through a remote host. */
+export async function initializePlatform() {
+  if (!isTauri()) return;
+  const folders = await invoke<GameFolder[]>('game_folders').catch(e => { console.error(e); return []; });
+  canHost = /Windows/.test(navigator.userAgent) || folders.some(f => f.found);
+  let preferred: string | null = null;
+  try { preferred = localStorage.getItem(MODE_KEY); } catch { /* ignore */ }
+  appMode = canHost && preferred !== 'client' ? 'host' : 'client';
+  isClient = appMode === 'client';
+  remote = isClient;
+}
 /** Real files (the desktop app, or a host through the share server) rather than sample data. */
 export const hasHost = () => isTauri() || isWeb;
 
-/** Switch this PC between host and client (Windows only). Restarts the window. */
+/** Switch this computer between host and client. Restarts the window. */
 export async function setAppMode(mode: AppMode) {
   if (mode === 'client') await shareStop().catch(() => {}); // a client doesn't share its own folder
   try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
@@ -82,7 +93,7 @@ export function openExternal(url: string) {
 }
 
 export interface GameFolder {
-  kind: 'native' | 'custom';
+  kind: 'native' | 'crossover' | 'custom';
   label: string;
   path: string;
   /** whether the game's FactoryGame data folder exists there */
@@ -96,7 +107,7 @@ const PREVIEW_FOLDERS: GameFolder[] = [
 
 /**
  * Blueprint roots Satisfactory uses on this machine, best match first:
- * the Windows profile folder.
+ * the Windows profile folder or verified CrossOver bottle profiles on macOS.
  */
 export async function findGameFolders(): Promise<GameFolder[]> {
   if (!hasHost()) return PREVIEW_FOLDERS;
