@@ -10,7 +10,8 @@
 //!
 //! One verified exception: SCIM's `og:image` is only the site icon, so for SCIM pages the
 //! picture is the first image of the blueprint's screenshot carousel (`id="carouselBlueprint"`,
-//! checked against live pages in Oct 2026).
+//! checked against live pages in Oct 2026). Another: a SCIM user's list links each blueprint as
+//! `/blueprints/index/details/id/<n>/…` and pages with `/p/<n>` (also checked Oct 2026).
 
 use reqwest::blocking::{Client, Response};
 use std::io::Read;
@@ -467,6 +468,58 @@ pub fn resolve_with(url: &str, allow_private: bool) -> Result<Resolved, String> 
     Ok(Resolved { name, sbp: sbp_bytes, cfg, source: src, url: page.to_string(), meta, image })
 }
 
+/// A SCIM user's blueprint list: `/<lang>/blueprints/index/index/idU/<id>/user/<Name>`.
+/// Returns the page URL without filters or page number, and the user's name.
+fn scim_user_page(u: &Url) -> Option<(Url, String)> {
+    let segs: Vec<&str> = u.path_segments()?.collect();
+    let i = segs.iter().position(|s| s.eq_ignore_ascii_case("idU"))?;
+    if i < 3 || segs[i - 3..i] != ["blueprints", "index", "index"] { return None; }
+    if !segs.get(i + 1)?.chars().all(|c| c.is_ascii_digit()) || segs.get(i + 2) != Some(&"user") { return None; }
+    let name = clean_name(&percent_decode(&segs.get(i + 3)?.replace('+', " "))); // SCIM writes spaces as `+`
+    if name.is_empty() { return None; }
+    let mut base = u.clone();
+    base.set_path(&segs[..i + 4].join("/"));
+    base.set_query(None);
+    base.set_fragment(None);
+    Some((base, name))
+}
+
+/// The SCIM user's name, if `url` is one of their blueprint lists.
+pub fn scim_user(url: &str) -> Option<String> {
+    (detect_source(url)? == Source::Scim).then_some(())?;
+    scim_user_page(&Url::parse(url.trim()).ok()?).map(|(_, n)| n)
+}
+
+/// Every blueprint page linked from a SCIM user's list, across its pages (`…/p/2`, `…/p/3`…).
+/// Checked against live pages in Oct 2026: a page past the end repeats the last one, so we stop
+/// at the first page that adds nothing new.
+pub fn scim_user_blueprints(url: &str) -> Result<(String, Vec<String>), String> {
+    if scim_user(url).is_none() { return Err("That isn't a SCIM user's blueprint list.".into()); }
+    scim_user_blueprints_with(url, false)
+}
+
+fn scim_user_blueprints_with(url: &str, allow_private: bool) -> Result<(String, Vec<String>), String> {
+    const MAX_PAGES: usize = 50;
+    let (base, name) = Url::parse(url.trim()).ok().as_ref().and_then(scim_user_page)
+        .ok_or("That isn't a SCIM user's blueprint list.")?;
+    let c = client()?;
+    let mut found: Vec<String> = Vec::new();
+    for p in 1..=MAX_PAGES {
+        let mut page = base.clone();
+        if p > 1 { page.set_path(&format!("{}/p/{p}", base.path())); }
+        let f = fetch(&c, &page, allow_private)?;
+        if !f.is_html { return Err("The user's page didn't come back as a web page.".into()); }
+        let before = found.len();
+        for l in extract_links(&String::from_utf8_lossy(&f.bytes), &page) {
+            let s = l.to_string();
+            if l.path().contains("/blueprints/index/details/id/") && !found.contains(&s) { found.push(s); }
+        }
+        if found.len() == before { break; }
+    }
+    if found.is_empty() { return Err(format!("Couldn't find any blueprints on {name}'s page.")); }
+    Ok((name, found))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,5 +652,29 @@ mod tests {
         assert!(e.contains("Couldn't find"), "{e}"); // HTML posing as .sbp is never accepted
         let e = resolve_with(&format!("{base}/missing"), true).unwrap_err();
         assert!(e.contains("404"), "{e}");
+    }
+
+    #[test]
+    fn lists_a_scim_users_blueprints_across_pages() {
+        assert_eq!(scim_user("https://satisfactory-calculator.com/en/blueprints/index/index/idU/91811/user/FineTheory/sortBy/name").as_deref(), Some("FineTheory"));
+        assert_eq!(scim_user("https://satisfactory-calculator.com/en/blueprints/index/details/id/10327/name/SFS+Foundry+x3"), None);
+        assert_eq!(scim_user("https://example.com/en/blueprints/index/index/idU/1/user/X"), None);
+
+        // pages like SCIM's: two pages, then the last page repeated
+        let server = Arc::new(Server::http("127.0.0.1:0").unwrap());
+        let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+        let s = server.clone();
+        std::thread::spawn(move || for req in s.incoming_requests() {
+            let user = "/en/blueprints/index/index/idU/7/user/Some+One";
+            let body = if req.url() == user {
+                r#"<a href="/en/blueprints/index/details/id/1/name/A">A</a><a href="/en/blueprints/index/details/id/2/name/B">B</a><a href="/en/blueprints/index/index/idU/7/user/Some+One/p/2">2</a>"#
+            } else if req.url().starts_with(&format!("{user}/p/")) {
+                r#"<a href="/en/blueprints/index/details/id/3/name/C">C</a><a href="/en/blueprints/index/details/id/1/name/A">A</a>"#
+            } else { "" };
+            let _ = req.respond(HttpResponse::from_string(body).with_header(Header::from_bytes("Content-Type", "text/html").unwrap()));
+        });
+        let (name, links) = scim_user_blueprints_with(&format!("{base}/en/blueprints/index/index/idU/7/user/Some+One/sortBy/name"), true).unwrap();
+        assert_eq!(name, "Some One");
+        assert_eq!(links.iter().map(|l| l.rsplit('/').next().unwrap()).collect::<Vec<_>>(), ["A", "B", "C"]);
     }
 }

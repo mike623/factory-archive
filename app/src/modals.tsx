@@ -17,6 +17,13 @@ export function detectSource(url: string): SourceId | null {
   return null;
 }
 
+/** A SCIM user's blueprint list (mirrors `resolve::scim_user`). */
+export function scimUser(url: string): string | null {
+  const m = url.trim().match(/^https?:\/\/[^/]*satisfactory-calculator\.com\/[^?#]*\/blueprints\/index\/index\/idU\/\d+\/user\/([^/?#]+)/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch { return m[1]; }
+}
+
 const EXAMPLES: { src: SourceId; url: string }[] = [
   { src: 'scim', url: 'https://satisfactory-calculator.com/en/blueprints/index/details/id/12162/name/Modular+Manufacturer+L' },
   { src: 'sbp',  url: 'https://satisfactoryblueprints.com/blueprint/c4ae7a98-699a-4aab-af31-61f99cfd71f0' },
@@ -38,11 +45,14 @@ function mockResolve(src: SourceId, url: string): Blueprint {
 type ImportPhase = 'idle' | 'resolving' | 'resolved' | 'done' | 'failed' | 'saved';
 
 export interface LinkImport { name: string; session: string; hasCfg: boolean; sizeKb: number }
+export interface UserImport { user: string; session: string; added: number; failed: number; save: string | null; categoryError: string | null }
 
-export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink, findImported }: {
+export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink, importUser, findImported }: {
   open: boolean; onClose: () => void; onAdd: (b: Blueprint) => void;
   /** desktop app: download the blueprint behind the link into `target` */
   importLink?: (url: string) => Promise<LinkImport>;
+  /** desktop app: download all of a SCIM user's blueprints into `target`, in one category */
+  importUser?: (url: string, progress: (done: number, total: number) => void) => Promise<UserImport>;
   /** desktop app: name of the blueprint in `target` already downloaded from this link */
   findImported?: (url: string) => Promise<string | null>;
   /** desktop app: pick local .sbp files instead (they go to `target`) */
@@ -53,6 +63,8 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
   const [step, setStep] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [saved, setSaved] = useState<LinkImport | null>(null);
+  const [userSaved, setUserSaved] = useState<UserImport | null>(null);
+  const [userProgress, setUserProgress] = useState<[number, number] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<number[]>([]);
 
@@ -73,11 +85,17 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
   }, [url, target, phase, findImported]);
 
   const src = detectSource(url);
+  const user = importUser ? scimUser(url) : null;
   const resolved = src ? mockResolve(src, url.trim()) : null;
 
   const resolve = async () => {
     if (!src || phase === 'resolving') return;
-    setPhase('resolving'); setStep(0); setFailure(null); setSaved(null);
+    setPhase('resolving'); setStep(0); setFailure(null); setSaved(null); setUserSaved(null); setUserProgress(null);
+    if (user && importUser) {
+      try { setUserSaved(await importUser(url.trim(), (done, total) => setUserProgress([done, total]))); setPhase('saved'); }
+      catch (e) { setFailure(String(e).replace(/^Error: /, '')); setPhase('failed'); }
+      return;
+    }
     if (importLink) {
       // desktop app: really download and save it; step through the checklist while that runs
       let i = 0;
@@ -167,13 +185,37 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
             </div>
           </div>}
 
+          {phase === 'saved' && userSaved && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 10, padding: '13px 14px',
+            borderRadius: 'var(--r-md)', background: 'var(--ok-ghost)', border: '1px solid color-mix(in oklab,var(--ok) 30%,transparent)' }}>
+            <IcCheck size={18} style={{ color: 'var(--ok)', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5 }}>
+              <div>Added <strong>{userSaved.added}</strong> of {userSaved.user}'s blueprints to <strong>{userSaved.session}</strong></div>
+              {userSaved.failed > 0 && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>
+                {userSaved.failed} couldn't be downloaded. Try those links one by one.</div>}
+              {userSaved.save
+                ? <div style={{ fontSize: 11.5, color: 'var(--text-mute)', marginTop: 6 }}>
+                    They're in the category <strong>{userSaved.user}</strong>, saved as a new save <span className="mono">{userSaved.save}</span>. Load that save in-game to see them.</div>
+                : userSaved.categoryError && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>
+                    Couldn't put them in a category: {userSaved.categoryError}</div>}
+            </div>
+          </div>}
+
           {phase === 'failed' && failure && <div role="alert" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '12px 13px',
             borderRadius: 'var(--r)', background: 'var(--warn-ghost)', border: '1px solid color-mix(in oklab,var(--warn) 30%,transparent)',
             color: 'var(--warn)', fontSize: 12.5, lineHeight: 1.5 }}>
             <IcWarn size={15} style={{ flexShrink: 0, marginTop: 2 }} /><span>{failure}</span></div>}
 
           {/* resolving */}
-          {phase === 'resolving' && <div style={{ marginTop: 14, borderRadius: 'var(--r)', background: 'var(--bg-deep)',
+          {phase === 'resolving' && user && <div style={{ marginTop: 14, borderRadius: 'var(--r)', background: 'var(--bg-deep)',
+            border: '1px solid var(--border)', padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 10, color: 'var(--accent)' }}>
+            <span style={{ width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent',
+              borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <span className="mono" style={{ fontSize: 11.5 }}>{userProgress
+              ? `Downloading ${Math.min(userProgress[0] + 1, userProgress[1])} of ${userProgress[1]}`
+              : `Finding ${user}'s blueprints`}</span>
+          </div>}
+
+          {phase === 'resolving' && !user && <div style={{ marginTop: 14, borderRadius: 'var(--r)', background: 'var(--bg-deep)',
             border: '1px solid var(--border)', padding: '14px 15px' }}>
             {STEPS.map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0',
@@ -225,7 +267,8 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
           <span className="tlabel" style={{ fontSize: 9, color: 'var(--text-faint)' }}>
             {importLink
               ? (already ? <span style={{ color: 'var(--warn)' }}>{`Already imported: in ${target} as "${already}"`}</span>
-                : target ? `Downloads into ${target}` : 'Pick a world session in the filters first')
+                : target ? (user ? `Downloads all of ${user}'s blueprints into ${target}, in a category named after them` : `Downloads into ${target}`)
+                : 'Pick a world session in the filters first')
               : phase === 'done' ? '✓ Added to library' : 'Import adds to library — export to game folder separately'}</span>
           <div style={{ flex: 1 }} />
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -235,7 +278,7 @@ export function ImportModal({ open, onClose, onAdd, onBrowse, target, importLink
             ? <Btn variant="primary" icon={phase === 'done' ? IcCheck : IcPlus} disabled={phase === 'done'} onClick={add}>
                 {phase === 'done' ? 'Added' : 'Add to library'}</Btn>
             : <Btn variant="primary" icon={importLink ? IcDownload : IcSearch} disabled={!src || phase === 'resolving' || (!!importLink && (!target || !!already))} onClick={resolve}>
-                {phase === 'resolving' ? (importLink ? 'Downloading…' : 'Resolving…') : importLink ? 'Download & add' : 'Resolve link'}</Btn>}
+                {phase === 'resolving' ? (importLink ? 'Downloading…' : 'Resolving…') : user ? 'Download all & add' : importLink ? 'Download & add' : 'Resolve link'}</Btn>}
         </div>
       </div>
     </div>

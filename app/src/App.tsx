@@ -6,7 +6,7 @@ import { IcCopy, IcExport } from './icons';
 import { CategoryRail, categoryCounts, EMPTY_FILTERS, FilterRail, groupBlueprints, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
-import { ExportDrawer, ImportModal, type LinkImport } from './modals';
+import { ExportDrawer, ImportModal, type LinkImport, type UserImport } from './modals';
 import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
@@ -15,8 +15,8 @@ import { CopyDrawer } from './copyDrawer';
 import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import {
-  call, confirmAction, downloadBlueprint, hasHost, isClient, pickFilesInBrowser, remote, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
-  type Outcome,
+  call, categoryTree, confirmAction, editCategories, downloadBlueprint, hasHost, isClient, pickFilesInBrowser, remote, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
+  type CategoryEdit, type Outcome,
 } from './platform';
 import { useShare } from './share';
 import { ImportToasts } from './shareCard';
@@ -205,6 +205,41 @@ function Library() {
     rememberImported([`disk:${r.session}/${r.name}`]);
     disk.reload();
     return r;
+  };
+  /** Every blueprint of a SCIM user, into one category named after them. */
+  const importUser = async (url: string, progress: (done: number, total: number) => void): Promise<UserImport> => {
+    const root = gameFolder.current?.path;
+    if (!root) throw new Error('Satisfactory folder not found. Choose it with the folder card in the sidebar.');
+    if (!importTarget) throw new Error('Pick a world session in the filters first.');
+    const session = importTarget;
+    const { user, links } = await call<{ user: string; links: string[] }>('scim_user_links', { url });
+    const names: string[] = [];
+    let failed = 0;
+    for (const [i, link] of links.entries()) {
+      progress(i, links.length);
+      try {
+        // already downloaded ones still go into the category
+        const had = await call<string | null>('link_imported', { root, session, url: link });
+        names.push(had ?? (await call<LinkImport>('import_link', { root, session, url: link })).name);
+      } catch { failed++; }
+    }
+    progress(links.length, links.length);
+    rememberImported(names.map(n => `disk:${session}/${n}`));
+    let save: string | null = null, categoryError: string | null = null;
+    if (names.length) {
+      try {
+        const cat = (await categoryTree(root, session, [])).find(c => c.name === user);
+        // a new category comes with one sub-category, "General"
+        const sub = cat ? cat.subs.find(s => s.name)?.name ?? '' : 'General';
+        const edits: CategoryEdit[] = [
+          ...(cat ? [] : [{ op: 'addCategory' as const, name: user }]),
+          ...names.map(blueprint => ({ op: 'move' as const, blueprint, category: user, sub })),
+        ];
+        save = await editCategories(root, session, edits);
+      } catch (e) { categoryError = String(e).replace(/^Error: /, ''); }
+    }
+    disk.reload();
+    return { user, session, added: names.length, failed, save, categoryError };
   };
   const findImported = useCallback(async (url: string) => {
     const root = gameFolder.current?.path;
@@ -401,7 +436,7 @@ function Library() {
         }} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
         onBrowse={hasHost() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
-        importLink={hasHost() ? importLink : undefined} findImported={hasHost() ? findImported : undefined} />
+        importLink={hasHost() ? importLink : undefined} importUser={hasHost() ? importUser : undefined} findImported={hasHost() ? findImported : undefined} />
       {copyMode
         ? <CopyDrawer open={exportOpen} items={selItems} sessions={sessionOptions.map(o => o.name)} defaultTarget={currentSession}
             onClose={() => { setExportOpen(false); }} onRemove={toggleSel} onCopy={copyToWorld}

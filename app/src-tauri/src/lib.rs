@@ -96,6 +96,7 @@ fn web_call(app: &tauri::AppHandle, cmd: &str, a: &serde_json::Value, root: &Pat
             added(&out.session, &mut std::iter::once(out.name.clone()));
             to_value(out)
         }
+        "scim_user_links" => to_value(tauri::async_runtime::block_on(scim_user_links(arg(a, "url")?))?),
         "copy_blueprints" => to_value(copy_blueprints(r, arg(a, "items")?, arg(a, "target")?)),
         "rename_blueprint" => to_value(rename_blueprint(r, arg(a, "session")?, arg(a, "from")?, arg(a, "to")?)?),
         "delete_blueprint" => to_value(delete_blueprint(r, arg(a, "session")?, arg(a, "name")?)?),
@@ -104,7 +105,7 @@ fn web_call(app: &tauri::AppHandle, cmd: &str, a: &serde_json::Value, root: &Pat
         _ => return Err(format!("{cmd} isn't available on the web page")),
     }.map_err(|e| e.to_string())?;
     // the host's window re-reads the library after a friend changed something
-    if !matches!(cmd, "game_folders" | "sessions" | "library" | "blueprint_info" | "blueprint_image" | "link_imported" | "category_tree") {
+    if !matches!(cmd, "game_folders" | "sessions" | "library" | "blueprint_info" | "blueprint_image" | "link_imported" | "category_tree" | "scim_user_links") {
         let _ = app.emit("library-changed", ());
     }
     Ok(v)
@@ -332,6 +333,20 @@ async fn import_link(app: tauri::AppHandle, root: String, session: String, url: 
 }
 
 #[derive(Serialize)]
+struct UserLinks {
+    user: String,
+    links: Vec<String>,
+}
+
+/// The blueprint pages of a SCIM user, for importing them all at once.
+#[tauri::command]
+async fn scim_user_links(url: String) -> Result<UserLinks, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve::scim_user_blueprints(&url).map(|(user, links)| UserLinks { user, links }))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
 struct RefetchResult {
     updated: usize,
     failed: usize,
@@ -490,7 +505,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, discover_hosts, host_hello, host_call, host_download, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, scim_user_links, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, discover_hosts, host_hello, host_call, host_download, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }
