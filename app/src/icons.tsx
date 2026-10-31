@@ -67,3 +67,9 @@ export const IcBolt = (p: IconProps) => <I {...p}><path d="M13 2L5 14h6l-1 8 8-1
 export const IcSun = (p: IconProps) => <I {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></I>;
 export const IcMoon = (p: IconProps) => <I {...p}><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></I>;
 export const IcShare = (p: IconProps) => <I {...p}><circle cx="12" cy="12" r="2"/><path d="M8.5 15.5a5 5 0 010-7M15.5 8.5a5 5 0 010 7M5.6 18.4a9 9 0 010-12.8M18.4 5.6a9 9 0 010 12.8"/></I>;
+
+/* ---- backup / cloud ---- */
+export const IcCloud = (p: IconProps) => <I {...p}><path d="M7 18.5a4.5 4.5 0 01-.6-8.96A6 6 0 0118 9.5a4.5 4.5 0 01.5 9"/><path d="M12 21v-7M9.5 16.5L12 14l2.5 2.5"/></I>;
+export const IcLock = (p: IconProps) => <I {...p}><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></I>;
+export const IcEye = (p: IconProps) => <I {...p}><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/></I>;
+export const IcEyeOff = (p: IconProps) => <I {...p}><path d="M10.6 6.2A10 10 0 0112 6c6.4 0 10 6 10 6a17 17 0 01-2.4 3.1M6.6 7.8A17 17 0 002 12s3.6 6 10 6a9.6 9.6 0 003.9-.8"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/><path d="M3 3l18 18"/></I>;

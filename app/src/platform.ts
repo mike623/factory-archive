@@ -304,3 +304,135 @@ export async function saveAccounts(root: string, session: string): Promise<SaveA
 export async function copySaveToAccount(root: string, session: string, account: string): Promise<string> {
   return invoke<string>('copy_save_to_account', { root, session, account });
 }
+
+/* ---------- WebDAV sync (desktop app on the host only: it holds the token) ---------- */
+
+export type BackupAuth = 'auto' | 'basic' | 'bearer';
+
+/** The saved connection, as the UI sees it: no token, only whether one is stored. */
+export interface BackupSettings {
+  url: string;
+  user: string;
+  auth: BackupAuth;
+  allowSelfSigned: boolean;
+  hasToken: boolean;
+  /** `<host><path>/.factory-archive`, for display */
+  folder: string;
+  /** run on app start / window focus */
+  auto: boolean;
+  /** mirror deletions: a file gone here is removed from the server */
+  removeMissing: boolean;
+  /** unix seconds of the last finished run, 0 when there never was one */
+  lastRun: number;
+}
+
+/** What the form sends. An empty token keeps the one already saved. */
+export interface BackupInput {
+  url: string;
+  user: string;
+  token: string;
+  auth: BackupAuth;
+  allowSelfSigned: boolean;
+  removeMissing: boolean;
+}
+
+export interface BackupTest {
+  /** which one the server accepted */
+  auth: 'basic' | 'bearer';
+  folderExists: boolean;
+  owned: boolean;
+  /** files already in the reserved folder that aren't ours */
+  others: number;
+  label: string;
+}
+
+export interface BackupPlan { files: number; bytes: number; uploads: number; sessions: number }
+
+export interface BackupOutcome {
+  session: string;
+  name: string;
+  ext: string;
+  status: 'uploaded' | 'replaced' | 'skipped' | 'removed' | 'pending' | 'failed' | 'written';
+  error: string | null;
+}
+
+export interface BackupSummary {
+  total: number; uploaded: number; replaced: number; skipped: number; failed: number; bytes: number;
+  /** files removed from the server because they left the folder */
+  removed: number;
+  /** removals that were due but held back (empty folder, a failure, or too many for an automatic run) */
+  pendingRemovals: number;
+}
+
+/** One blueprint, as far as the local/cloud comparison is concerned. */
+export interface BackupChange {
+  session: string;
+  name: string;
+  ext: string;
+  kind: 'local-only' | 'cloud-only' | 'differs' | 'same';
+  localSize: number;
+  cloudSize: number;
+}
+
+/** Which side moved since the last sync. `differentFolder` means the game folder changed. */
+export interface BackupStatus {
+  verdict: 'no-connection' | 'different-folder' | 'in-sync' | 'local-ahead' | 'cloud-ahead' | 'both-changed';
+  localFiles: number;
+  cloudFiles: number;
+  changes: BackupChange[];
+  /** the folder this PC synced last time, when it isn't the one being looked at */
+  previousRoot: string | null;
+  lastRun: number;
+  /** when the state on the server was last written */
+  cloudStateAt: number;
+}
+
+/** What "Use the cloud copy" did. The local file that was replaced is kept as `<name>.bak`. */
+export interface BackupPullSummary {
+  total: number;
+  written: number;
+  same: number;
+  failed: number;
+  bytes: number;
+}
+
+/** The quiet run's answer: `null` when it wasn't due, `summary: null` when a decision is needed. */
+export interface AutoOutcome {
+  verdict: BackupStatus['verdict'];
+  summary: BackupSummary | null;
+}
+
+/** Backing up needs the desktop app, and only the PC that owns the folder. */
+export const canBackup = () => isTauri() && !remote;
+
+export const backupSettings = () => invoke<BackupSettings>('backup_settings');
+export const saveBackupSettings = (settings: BackupInput) => invoke<BackupSettings>('save_backup_settings', { settings });
+export const forgetBackup = () => invoke<void>('forget_backup');
+/** The saved token, fetched only when the player clicks "show". */
+export const revealBackupToken = () => invoke<string>('reveal_backup_token');
+export const testBackup = (settings: BackupInput) => invoke<BackupTest>('test_backup', { settings });
+export const backupPlan = (root: string) => invoke<BackupPlan>('backup_plan', { root });
+export const runBackup = (root: string, force: boolean, adopt: boolean, acceptNewRoot = false) =>
+  invoke<BackupSummary>('backup_run', { root, force, adopt, acceptNewRoot });
+/** Which side changed. Never downloads a blueprint. */
+export const backupStatus = (root: string) => invoke<BackupStatus>('backup_status', { root });
+/** "Use the cloud copy": writes into the game folder, keeping what it replaces as `.bak`. */
+export const pullBackup = (root: string, acceptNewRoot = false) =>
+  invoke<BackupPullSummary>('backup_pull', { root, acceptNewRoot });
+export const setBackupAuto = (on: boolean) => invoke<BackupSettings>('set_backup_auto', { on });
+/** The quiet run for app start / window focus. `null` when it isn't due. */
+export const autoBackup = (root: string) => invoke<AutoOutcome | null>('backup_auto', { root });
+
+/** Fires for every file during a run. Returns an unsubscribe function. */
+export async function onBackupProgress(cb: (o: BackupOutcome) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<BackupOutcome>('backup-progress', e => cb(e.payload));
+}
+
+export function bytesLabel(n: number): string {
+  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`;
+  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+}

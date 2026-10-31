@@ -1,3 +1,4 @@
+mod backup;
 mod blueprints;
 mod client;
 mod gamepaths;
@@ -491,6 +492,99 @@ fn uninstall_live_mod(game: String) -> Result<(), String> {
     modinstall::uninstall(&PathBuf::from(game))
 }
 
+/* ---------- WebDAV backup (host only: it holds a token and talks to the internet) ---------- */
+
+/// Where `backup.json` and `backup-index.json` live, never next to the game's files.
+fn backup_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_data_dir().map(|d| d.join("backup")).map_err(|e| e.to_string())
+}
+
+/// The saved WebDAV connection, without the token.
+#[tauri::command]
+fn backup_settings(app: tauri::AppHandle) -> Result<backup::View, String> {
+    Ok(backup::view(&backup_dir(&app)?))
+}
+
+/// Save the connection. An empty token keeps the one already saved.
+#[tauri::command]
+fn save_backup_settings(app: tauri::AppHandle, settings: backup::Input) -> Result<backup::View, String> {
+    backup::save(&backup_dir(&app)?, settings)
+}
+
+/// Forget the saved connection (and its token).
+#[tauri::command]
+fn forget_backup(app: tauri::AppHandle) -> Result<(), String> {
+    backup::forget(&backup_dir(&app)?)
+}
+
+/// Hand the saved token to the window, only when the player clicks "show". Host only, and not
+/// part of the share page's allowlist: it never leaves this machine.
+#[tauri::command]
+fn reveal_backup_token(app: tauri::AppHandle) -> Result<String, String> {
+    backup::reveal(&backup_dir(&app)?)
+}
+
+/// Which side changed since the last sync, without downloading any blueprint.
+#[tauri::command]
+async fn backup_status(app: tauri::AppHandle, root: String) -> Result<backup::Status, String> {
+    let dir = backup_dir(&app)?;
+    blocking(move || backup::status(&dir, &PathBuf::from(root))).await
+}
+
+/// "Use the cloud copy": write the server's blueprints into the folder, keeping the local file
+/// as `<name>.bak` when one is replaced.
+#[tauri::command]
+async fn backup_pull(app: tauri::AppHandle, root: String, accept_new_root: bool) -> Result<backup::PullSummary, String> {
+    let dir = backup_dir(&app)?;
+    blocking(move || {
+        let emit = app.clone();
+        backup::pull(&dir, &PathBuf::from(root), accept_new_root, move |outcome| {
+            let _ = emit.emit("backup-progress", &outcome);
+        })
+    })
+    .await
+}
+
+/// Check that the address and token work, without uploading anything.
+#[tauri::command]
+async fn test_backup(app: tauri::AppHandle, settings: backup::Input) -> Result<backup::TestReport, String> {
+    let dir = backup_dir(&app)?;
+    blocking(move || backup::check(&dir, settings)).await
+}
+
+/// How much a backup would upload (no network).
+#[tauri::command]
+fn backup_plan(app: tauri::AppHandle, root: String) -> Result<backup::Plan, String> {
+    Ok(backup::plan(&backup_dir(&app)?, &PathBuf::from(root)))
+}
+
+/// Turn the app-start / window-focus run on or off.
+#[tauri::command]
+fn set_backup_auto(app: tauri::AppHandle, on: bool) -> Result<backup::View, String> {
+    backup::set_auto(&backup_dir(&app)?, on)
+}
+
+/// The quiet run tried on app start and window focus. `None` when it isn't due.
+#[tauri::command]
+async fn backup_auto(app: tauri::AppHandle, root: String) -> Result<Option<backup::AutoOutcome>, String> {
+    let dir = backup_dir(&app)?;
+    blocking(move || backup::auto(&dir, &PathBuf::from(root))).await
+}
+
+/// Upload every changed blueprint, reading each one back to check it.
+#[tauri::command]
+async fn backup_run(app: tauri::AppHandle, root: String, force: bool, adopt: bool) -> Result<backup::Summary, String> {
+    let dir = backup_dir(&app)?;
+    blocking(move || {
+        let emit = app.clone();
+        let opts = backup::Options { force, adopt, ..backup::Options::manual() };
+        backup::run(&dir, &PathBuf::from(root), opts, move |outcome| {
+            let _ = emit.emit("backup-progress", &outcome);
+        })
+    })
+    .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -505,7 +599,7 @@ pub fn run() {
             app.manage(MetaStore::new(dir));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, scim_user_links, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, discover_hosts, host_hello, host_call, host_download, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod])
+        .invoke_handler(tauri::generate_handler![game_folders, open_folder, library, blueprint_image, blueprint_info, import_link, scim_user_links, link_imported, refetch_details, import_files, import_bytes, copy_blueprints, rename_blueprint, delete_blueprint, category_tree, edit_categories, save_accounts, copy_save_to_account, sessions, share_start, share_stop, share_status, share_set_session, discover_hosts, host_hello, host_call, host_download, mod_status, game_installs, live_mod_state, install_live_mod, uninstall_live_mod, backup_settings, save_backup_settings, forget_backup, reveal_backup_token, test_backup, backup_plan, backup_run, set_backup_auto, backup_auto, backup_status, backup_pull])
         .run(tauri::generate_context!())
         .expect("error while running Factory Archive");
 }

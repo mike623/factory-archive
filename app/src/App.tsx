@@ -6,7 +6,7 @@ import { IcCopy, IcExport } from './icons';
 import { CategoryRail, categoryCounts, EMPTY_FILTERS, FilterRail, groupBlueprints, Sidebar, type Filters } from './library';
 import { LibraryBody, TopBar, type SortKey, type ViewMode } from './cards';
 import { BlueprintDetail } from './detail';
-import { ExportDrawer, ImportModal, type LinkImport, type UserImport } from './modals';
+import { BackupModal, ExportDrawer, ImportModal, type LinkImport, type UserImport } from './modals';
 import { EmptyState, NoResults } from './empty';
 import { useTheme } from './theme';
 import { useGameFolder } from './gameFolder';
@@ -15,7 +15,7 @@ import { CopyDrawer } from './copyDrawer';
 import { Notices, useNotices } from './notices';
 import { usePersistent } from './persist';
 import {
-  call, categoryTree, confirmAction, editCategories, downloadBlueprint, hasHost, isClient, pickFilesInBrowser, remote, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint,
+  autoBackup, call, categoryTree, confirmAction, editCategories, downloadBlueprint, hasHost, isClient, pickFilesInBrowser, remote, copyBlueprints, deleteBlueprint, importDropped, importFiles, isBlueprintFile, openFolder, pickBlueprintFiles, refetchDetails, renameBlueprint, canBackup,
   type CategoryEdit, type Outcome,
 } from './platform';
 import { useShare } from './share';
@@ -104,14 +104,71 @@ function Library() {
   const [sel, setSel] = useState<Set<string>>(() => new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const gameFolder = useGameFolder();
   const share = useShare(gameFolder.current?.path ?? null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Sync on app start and when the window comes back into focus. The Rust side decides
+  // whether anything is due (5-minute gap, after a first real run, folder quiet), so calling
+  // it often is cheap and safe.
+  // one warning per session per reason: a broken token or an unresolved pick shouldn't nag on
+  // every window focus
+  const autoNoticed = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const root = gameFolder.current?.path;
+    if (!canBackup() || !root) return;
+    let stopped = false;
+    const once = (key: string) => {
+      if (stopped || autoNoticed.current.has(key)) return false;
+      autoNoticed.current.add(key);
+      return true;
+    };
+    const attempt = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const out = await autoBackup(root);
+        if (stopped || !out) return;
+        if (!out.summary) {
+          // the quiet run stopped because only the player can decide
+          if (!once(out.verdict)) return;
+          const [title, detail] = out.verdict === 'different-folder'
+            ? ['Sync is paused: different folder', 'The game folder is not the one you last synced. Open Sync to confirm it.']
+            : out.verdict === 'cloud-ahead'
+              ? ['The cloud has newer blueprints', "Open Sync to use the cloud copy or keep this PC's version."]
+              : out.verdict === 'both-changed'
+                ? ['Both versions changed', 'Open Sync to choose which version to keep.']
+                : ['Sync needs your choice', 'Open Sync to see what changed.'];
+          notices.push({ tone: 'warn', title, detail });
+          return;
+        }
+        const s = out.summary;
+        if (!s.uploaded && !s.removed) return;
+        notices.push({
+          tone: 'ok',
+          title: 'Synced automatically',
+          detail: [s.uploaded ? `${s.uploaded} uploaded` : '', s.removed ? `${s.removed} removed` : ''].filter(Boolean).join(', '),
+        });
+      } catch (e) {
+        if (!once('error')) return;
+        notices.push({ tone: 'warn', title: "Automatic sync didn't run", detail: String(e).replace(/^Error: /, '') });
+      }
+    };
+    void attempt();
+    const onFocus = () => { void attempt(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      stopped = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [gameFolder.current?.path]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === 'Escape') { setImportOpen(false); setExportOpen(false); setCatEditorOpen(false); }
+      if (e.key === 'Escape') { setImportOpen(false); setExportOpen(false); setBackupOpen(false); setCatEditorOpen(false); }
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
@@ -374,6 +431,7 @@ function Library() {
         : <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {!showEmpty && <TopBar query={query} setQuery={setQuery} searchRef={searchRef} view={view} setView={setView}
               filterOpen={filterOpen} setFilterOpen={setFilterOpen} onImport={() => setImportOpen(true)}
+              onBackup={canBackup() ? () => setBackupOpen(true) : undefined}
               sortKey={sortKey} setSortKey={setSortKey} />}
             <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
               {!showEmpty && categoryOptions.length > 0 && <CategoryRail categories={categoryOptions} value={filters.category}
@@ -434,6 +492,13 @@ function Library() {
           notices.push({ tone: 'ok', title: `Saved as ${file}`, detail: 'Your other saves are unchanged. Close the world in the game if it\'s open, then load this save to see the new categories.' });
           disk.reload();
         }} />
+      {canBackup() && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)}
+        root={gameFolder.current?.path ?? null}
+        onBackedUp={s => notices.push(s.failed
+          ? { tone: 'warn', title: `Synced ${s.uploaded} of ${s.total}`, detail: `${s.failed} couldn't be uploaded — they'll be tried again next time.` }
+          : { tone: 'ok', title: s.uploaded || s.removed ? 'Blueprints synced' : 'Already in sync',
+              detail: [s.uploaded ? `${s.uploaded} uploaded` : '', s.removed ? `${s.removed} removed` : '',
+                s.skipped ? `${s.skipped} already there` : ''].filter(Boolean).join(' · ') || undefined })} />}
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onAdd={addBlueprint}
         onBrowse={hasHost() ? () => { setImportOpen(false); browseFiles(); } : undefined} target={importTarget}
         importLink={hasHost() ? importLink : undefined} importUser={hasHost() ? importUser : undefined} findImported={hasHost() ? findImported : undefined} />

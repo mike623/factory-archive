@@ -4,7 +4,7 @@ import { dimsLabel, type Blueprint } from './data';
 import type { BlueprintGroup } from './library';
 import { Btn, Check, FilePair, IconBtn, MiniTag, ModdedBadge, SourceBadge, StatusPill } from './components';
 import { BlueprintImage } from './blueprintImage';
-import { IcChevron, IcClose, IcFilter, IcFolder, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
+import { IcChevron, IcCloud, IcClose, IcFilter, IcFolder, IcGrid, IcList, IcMachine, IcPlus, IcPower, IcSearch, IcUser } from './icons';
 
 export type SortKey = 'recent' | 'name' | 'downloads' | 'power';
 export type ViewMode = 'grid' | 'list';
@@ -12,11 +12,14 @@ export type ViewMode = 'grid' | 'list';
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
 /* ============ TOP BAR ============ */
-export function TopBar({ query, setQuery, searchRef, view, setView, filterOpen, setFilterOpen, onImport, sortKey, setSortKey }: {
+export function TopBar({ query, setQuery, searchRef, view, setView, filterOpen, setFilterOpen, onImport, onBackup, sortKey, setSortKey }: {
   query: string; setQuery: (q: string) => void; searchRef: Ref<HTMLInputElement>;
   view: ViewMode; setView: (v: ViewMode) => void;
   filterOpen: boolean; setFilterOpen: (fn: (o: boolean) => boolean) => void;
-  onImport: () => void; sortKey: SortKey; setSortKey: (k: SortKey) => void;
+  onImport: () => void;
+  /** desktop host only: mirror the folder to a WebDAV account */
+  onBackup?: () => void;
+  sortKey: SortKey; setSortKey: (k: SortKey) => void;
 }) {
   const [focus, setFocus] = useState(false);
   return (
@@ -69,6 +72,7 @@ export function TopBar({ query, setQuery, searchRef, view, setView, filterOpen, 
         ))}
       </div>
 
+      {onBackup && <Btn variant="ghost" icon={IcCloud} onClick={onBackup} title="Keep a copy of your blueprints on a WebDAV account">Sync</Btn>}
       <Btn variant="primary" icon={IcPlus} onClick={onImport}>Import</Btn>
     </div>
   );

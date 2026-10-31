@@ -1,12 +1,14 @@
 // modals.tsx — import-from-URL modal + batch export drawer
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { dimsLabel, SOURCES, type Blueprint, type SourceId } from './data';
-import { Btn, Dot, FilePair, HeaderGlyph, IconBtn, MiniTag, SourceBadge, SourceMark, Thumb } from './components';
+import { Btn, Check, Dot, FilePair, HeaderGlyph, IconBtn, MiniTag, SourceBadge, SourceMark, Thumb } from './components';
 import {
-  IcCheck, IcClose, IcDimensions, IcDownload, IcExport, IcInfo, IcFolder, IcLink, IcMachine, IcPlus, IcPower, IcSearch, IcUpload,
+  IcCheck, IcCloud, IcClose, IcDimensions, IcDownload, IcExport, IcEye, IcEyeOff, IcInfo, IcFolder, IcLink, IcLock, IcMachine, IcPlus, IcPower, IcSearch, IcTrash, IcUpload,
   IcUser, IcWarn, type Icon,
 } from './icons';
-import { openFolder, tailPath } from './platform';
+import { bytesLabel, backupPlan, backupSettings, backupStatus, forgetBackup, onBackupProgress, openFolder, pullBackup, revealBackupToken, runBackup, saveBackupSettings, setBackupAuto, tailPath, testBackup,
+  type BackupInput, type BackupOutcome, type BackupPlan, type BackupPullSummary, type BackupStatus,
+  type BackupSummary, type BackupTest } from './platform';
 import type { GameFolderState } from './gameFolder';
 
 export function detectSource(url: string): SourceId | null {
@@ -434,6 +436,466 @@ export function ExportDrawer({ open, items, gameFolder, onClose, onRemove, onExp
                 <Btn variant="solid" onClick={onClose}>Done</Btn></div>
             : <Btn variant="primary" full size="lg" icon={IcExport} disabled={!items.length || !current || phase === 'running'} onClick={run}>
                 {phase === 'running' ? 'Exporting…' : `Export ${items.length} to game folder`}</Btn>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ WEBDAV BACKUP ============ */
+
+const backupField: CSSProperties = {
+  width: '100%', height: 38, padding: '0 11px', borderRadius: 'var(--r)', background: 'var(--bg-deep)',
+  border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12,
+  outline: 'none',
+};
+
+/** "3 min ago" for the last-run line. */
+function agoLabel(unix: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label style={{ display: 'block', marginBottom: 12 }}>
+      <span className="tlabel" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        {label}{hint && <span style={{ color: 'var(--text-faint)', letterSpacing: 0, textTransform: 'none', fontSize: 10 }}>{hint}</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+export function BackupModal({ open, onClose, root, onBackedUp }: {
+  open: boolean; onClose: () => void;
+  /** the game's blueprints folder (null when none was found) */
+  root: string | null;
+  onBackedUp?: (s: BackupSummary) => void;
+}) {
+  const [form, setForm] = useState<BackupInput>({ url: '', user: '', token: '', auth: 'auto', allowSelfSigned: false, removeMissing: true });
+  const [auto, setAuto] = useState(false);
+  const [lastRun, setLastRun] = useState(0);
+  const [hasToken, setHasToken] = useState(false);
+  const [folder, setFolder] = useState('');
+  const [plan, setPlan] = useState<BackupPlan | null>(null);
+  const [phase, setPhase] = useState<'idle' | 'testing' | 'running' | 'done'>('idle');
+  const [tested, setTested] = useState<BackupTest | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [log, setLog] = useState<BackupOutcome[]>([]);
+  const [summary, setSummary] = useState<BackupSummary | null>(null);
+  const [adopt, setAdopt] = useState(false);
+  const [force, setForce] = useState(false);
+  // the token is shown only after an explicit click, never because the dialog opened
+  const [show, setShow] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [pulled, setPulled] = useState<BackupPullSummary | null>(null);
+  // "this really is the folder I mean", after a different-folder warning
+  const [acceptNewRoot, setAcceptNewRoot] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setPhase('idle'); setTested(null); setError(null); setNote(null); setLog([]); setSummary(null); setPulled(null); setAdopt(false); setForce(false); setShow(false); setAuto(false); setLastRun(0); setStatus(null); setAcceptNewRoot(false);
+    backupSettings().then(v => {
+      if (!live) return;
+      setHasToken(v.hasToken);
+      setFolder(v.folder);
+      setAuto(v.auto);
+      setLastRun(v.lastRun);
+      setForm({ url: v.url, user: v.user, token: '', auth: v.auth, allowSelfSigned: v.allowSelfSigned, removeMissing: v.removeMissing });
+    }).catch(e => live && setError(String(e).replace(/^Error: /, '')));
+    if (root) {
+      backupPlan(root).then(p => live && setPlan(p)).catch(() => live && setPlan(null));
+      // which side moved? sizes only, so this is cheap even on a slow line
+      backupStatus(root).then(s => live && setStatus(s)).catch(() => live && setStatus(null));
+    }
+    return () => { live = false; };
+  }, [open, root]);
+
+  // live list of files as they go up; listening while the dialog is open means the very
+  // first files of a fast run aren't missed
+  useEffect(() => {
+    if (!open) return;
+    let stop = () => {};
+    let live = true;
+    onBackupProgress(o => setLog(l => [...l, o])).then(f => { if (live) stop = f; else f(); });
+    return () => { live = false; stop(); };
+  }, [open]);
+
+  const persist = async () => {
+    const v = await saveBackupSettings(form);
+    setHasToken(v.hasToken);
+    setFolder(v.folder);
+    return v;
+  };
+
+  /** Show what is in the field; the saved token is fetched the first time it is asked for. */
+  const toggleReveal = async () => {
+    if (show) { setShow(false); return; }
+    if (!form.token && hasToken) {
+      setRevealing(true);
+      try {
+        const saved = await revealBackupToken();
+        setForm(f => ({ ...f, token: saved }));
+      } catch (e) {
+        setError(String(e).replace(/^Error: /, ''));
+        return;
+      } finally {
+        setRevealing(false);
+      }
+    }
+    setShow(true);
+  };
+
+  /** Turn the quiet run on or off; it is saved straight away, unlike the fields above. */
+  const toggleAuto = async (on: boolean) => {
+    try {
+      const v = await setBackupAuto(on);
+      setAuto(v.auto);
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ''));
+    }
+  };
+
+  const runTest = async () => {
+    setPhase('testing'); setError(null); setNote(null); setTested(null);
+    try {
+      await persist();
+      const t = await testBackup({ ...form, token: '' });
+      setTested(t);
+      setAdopt(false);
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ''));
+    } finally {
+      setPhase('idle');
+    }
+  };
+
+  /** Re-read which side moved; a failed look leaves the previous answer alone. */
+  const refreshStatus = () => {
+    if (!root) return;
+    backupStatus(root).then(s => {
+      setStatus(s);
+      // the warning goes away only once this folder has become the synced one
+      if (s.verdict !== 'different-folder') setAcceptNewRoot(false);
+    }).catch(() => {});
+  };
+
+  const runNow = async () => {
+    if (!root) return;
+    setPhase('running'); setError(null); setNote(null); setLog([]); setSummary(null); setPulled(null);
+    try {
+      await persist();
+      const s = await runBackup(root, force, adopt, acceptNewRoot);
+      setSummary(s);
+      onBackedUp?.(s);
+      backupSettings().then(v => { setAuto(v.auto); setLastRun(v.lastRun); }).catch(() => {});
+      backupPlan(root).then(setPlan).catch(() => {});
+      refreshStatus();
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ''));
+    } finally {
+      setPhase('done');
+    }
+  };
+
+  /** "Use the cloud copy": the local side is replaced, with each old file kept as `.bak`. */
+  const runPull = async () => {
+    if (!root) return;
+    setPhase('running'); setError(null); setNote(null); setLog([]); setSummary(null); setPulled(null);
+    try {
+      await persist();
+      const s = await pullBackup(root, acceptNewRoot);
+      setPulled(s);
+      backupPlan(root).then(setPlan).catch(() => {});
+      backupSettings().then(v => { setAuto(v.auto); setLastRun(v.lastRun); }).catch(() => {});
+      refreshStatus();
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ''));
+    } finally {
+      setPhase('done');
+    }
+  };
+
+  const runForget = async () => {
+    try { await forgetBackup(); } catch { /* nothing to remove */ }
+    setForm({ url: '', user: '', token: '', auth: 'auto', allowSelfSigned: false, removeMissing: true });
+    setHasToken(false); setFolder(''); setTested(null); setSummary(null); setPulled(null); setLog([]); setShow(false); setAuto(false); setLastRun(0); setStatus(null); setAcceptNewRoot(false);
+    setNote('The saved address and token were removed from this PC.');
+  };
+
+  if (!open) return null;
+  const busy = phase === 'running' || phase === 'testing';
+  const ready = !!form.url.trim() && (hasToken || !!form.token.trim());
+  const total = plan?.files ?? summary?.total ?? pulled?.total ?? 0;
+  const done = log.length;
+  const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  const changed = status?.changes.filter(c => c.kind !== 'same') ?? [];
+  const pickSide = status?.verdict === 'cloud-ahead' || status?.verdict === 'both-changed';
+  const folderChanged = status?.verdict === 'different-folder';
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex',
+      alignItems: 'center', justifyContent: 'center', background: 'rgba(5,6,8,.78)' }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="backup-title" onClick={e => e.stopPropagation()}
+        style={{ width: 580, maxWidth: 'calc(100vw - 32px)', maxHeight: '88%', overflow: 'auto',
+        borderRadius: 'var(--r-lg)', background: 'var(--panel)', border: '1px solid var(--border-strong)',
+        boxShadow: 'var(--shadow-lg)', animation: 'scalein .18s var(--ease)' }}>
+
+        <DialogHeader icon={IcCloud} id="backup-title" title="Sync blueprints"
+          sub={folder ? `To ${folder}` : 'Keep a copy on a WebDAV account'} onClose={onClose} />
+
+        <div style={{ padding: 19 }}>
+          <Field label="WebDAV address" hint="the mount point, not the login page">
+            <input value={form.url} onChange={e => { setForm(f => ({ ...f, url: e.target.value })); setTested(null); }}
+              aria-label="WebDAV address" placeholder="https://abc123.teracloud.jp/dav/" disabled={busy}
+              spellCheck={false} style={backupField} />
+          </Field>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Username" hint="optional">
+                <input value={form.user} onChange={e => { setForm(f => ({ ...f, user: e.target.value })); setTested(null); }}
+                  aria-label="Username" placeholder="leave empty for a bearer token" disabled={busy} spellCheck={false} style={backupField} />
+              </Field>
+            </div>
+            <div style={{ width: 150 }}>
+              <Field label="Auth">
+                <select value={form.auth} onChange={e => setForm(f => ({ ...f, auth: e.target.value as BackupInput['auth'] }))}
+                  aria-label="Auth" disabled={busy}
+                  style={{ ...backupField, paddingRight: 6, cursor: 'pointer' }}>
+                  <option value="auto">Auto</option>
+                  <option value="basic">Basic</option>
+                  <option value="bearer">Bearer</option>
+                </select>
+              </Field>
+            </div>
+          </div>
+
+          <Field label="Token" hint={show ? 'visible on this screen only'
+            : hasToken ? 'saved — leave blank to keep it' : 'apps password or bearer token'}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input type={show ? 'text' : 'password'} value={form.token}
+                onChange={e => { setForm(f => ({ ...f, token: e.target.value })); setTested(null); }}
+                aria-label="Token" placeholder={hasToken && !show ? '••••••••' : ''} disabled={busy}
+                autoComplete="off" spellCheck={false} style={{ ...backupField, paddingRight: 40 }} />
+              {/* the token is never sent to the window on its own; this asks for it, once */}
+              <button type="button" onClick={toggleReveal} disabled={busy || revealing}
+                aria-label={show ? 'Hide token' : 'Show saved token'} aria-pressed={show}
+                title={show ? 'Hide the token' : form.token ? 'Show what I typed'
+                  : hasToken ? 'Show the saved token' : 'Nothing saved to show'}
+                style={{ position: 'absolute', right: 4, width: 30, height: 30, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 5,
+                  background: 'transparent', cursor: 'pointer',
+                  color: show ? 'var(--accent)' : 'var(--text-mute)' }}>
+                {show ? <IcEyeOff size={15} /> : <IcEye size={15} />}
+              </button>
+            </div>
+          </Field>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '2px 0 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: 'var(--text-dim)' }}>
+              <Check checked={form.removeMissing} onChange={v => setForm(f => ({ ...f, removeMissing: v }))} size={15}
+                label="Remove deleted files from the server" />
+              Remove files from the backup that I deleted here
+              <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-faint)' }}>keeps it a mirror</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: 'var(--text-dim)' }}>
+              <Check checked={form.allowSelfSigned} onChange={v => setForm(f => ({ ...f, allowSelfSigned: v }))} size={15} label="Allow self-signed certificate" />
+              Allow a self-signed certificate <span style={{ color: 'var(--text-faint)' }}>(own server only)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: 'var(--text-dim)' }}>
+              <Check checked={force} onChange={setForce} size={15} label="Upload everything again" />
+              Upload everything again, even files that are already there
+            </div>
+            {tested && !tested.owned && tested.others > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 9,
+              fontSize: 12, color: 'var(--warn)' }}>
+              <Check checked={adopt} onChange={setAdopt} size={15} label="Use it anyway" />
+              Use it anyway — that folder already has {tested.others} other file{tested.others === 1 ? '' : 's'}
+            </div>}
+            <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: 'var(--text-dim)',
+              opacity: hasToken && lastRun ? 1 : 0.55 }}>
+              <Check checked={auto} onChange={hasToken && lastRun ? toggleAuto : undefined} size={15}
+                label="Sync automatically when I open the app" />
+              Sync automatically when the app opens
+              <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-faint)' }}>
+                {lastRun ? `last ${agoLabel(lastRun)}` : 'sync once to turn this on'}
+              </span>
+            </div>
+          </div>
+
+          {/* the folder is fixed; say exactly where things go */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 11px', borderRadius: 'var(--r)',
+            background: 'var(--bg-deep)', border: '1px solid var(--border)' }}>
+            <IcLock size={15} style={{ color: 'var(--text-mute)', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="tlabel" style={{ fontSize: 8.5 }}>Backups go here — nothing else is touched</div>
+              <div className="mono" title={form.url} style={{ fontSize: 10.5, color: 'var(--text-dim)', whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+                {(folder || form.url.replace(/\/+$/, '') + '/.factory-archive') || '…/.factory-archive'}
+              </div>
+            </div>
+            <Dot color={tested ? 'var(--ok)' : 'var(--border-strong)'} />
+          </div>
+
+          {plan && phase !== 'running' && !summary && !pulled && <div className="mono" style={{ marginTop: 10, fontSize: 11,
+            color: 'var(--text-mute)' }}>
+            {plan.files === 0 ? 'No blueprints in this folder yet.'
+              : `${plan.files} file${plan.files === 1 ? '' : 's'} · ${bytesLabel(plan.bytes)} · ${plan.uploads} to upload`}
+          </div>}
+
+          {note && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '11px 12px',
+            borderRadius: 'var(--r)', background: 'var(--well)', border: '1px solid var(--border)',
+            color: 'var(--text-dim)', fontSize: 12.5 }}><IcInfo size={15} style={{ flexShrink: 0, marginTop: 1 }} />{note}</div>}
+
+          {tested && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '11px 12px',
+            borderRadius: 'var(--r)', background: 'var(--ok-ghost)',
+            border: '1px solid color-mix(in oklab,var(--ok) 30%,transparent)', color: 'var(--ok)', fontSize: 12.5, lineHeight: 1.5 }}>
+            <IcCheck size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Connected — {tested.auth === 'basic' ? 'Basic auth' : 'bearer token'} accepted.{' '}
+              {!tested.folderExists ? 'The backup folder will be created.'
+                : tested.owned ? 'The backup folder is already set up.'
+                : tested.others > 0 ? `The backup folder has ${tested.others} other file${tested.others === 1 ? '' : 's'}.`
+                : 'The backup folder is empty and ready.'}</span>
+          </div>}
+
+          {/* which side moved, and the picker when both did */}
+          {status && status.verdict !== 'no-connection' && <div role="status" style={{ marginTop: 14,
+            padding: '12px 13px', borderRadius: 'var(--r-md)', background: 'var(--well)',
+            border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {status.verdict === 'in-sync' ? <IcCheck size={15} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+                : status.verdict === 'local-ahead' ? <IcUpload size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                : <IcWarn size={15} style={{ color: 'var(--warn)', flexShrink: 0 }} />}
+              <span style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                {status.verdict === 'in-sync' ? 'Both sides have the same blueprints.'
+                  : status.verdict === 'local-ahead'
+                    ? `${changed.length || status.localFiles} change${(changed.length || status.localFiles) === 1 ? '' : 's'} here since the last sync — Sync now sends ${(changed.length || status.localFiles) === 1 ? 'it' : 'them'} up.`
+                  : status.verdict === 'cloud-ahead'
+                    ? `The cloud has ${changed.length} file${changed.length === 1 ? '' : 's'} this PC doesn't have yet.`
+                  : status.verdict === 'both-changed'
+                    ? `Both this PC and the cloud changed since the last sync (${changed.length} file${changed.length === 1 ? '' : 's'} differ).`
+                  : 'This PC is pointing at a folder other than the one it synced last.'}
+              </span>
+            </div>
+
+            {changed.length > 0 && <div className="mono" style={{ marginTop: 8, display: 'flex', flexDirection: 'column',
+              gap: 2, maxHeight: 84, overflowY: 'auto', fontSize: 10.5, color: 'var(--text-mute)' }}>
+              {changed.slice(0, 8).map(c => (
+                <div key={`${c.session}/${c.name}.${c.ext}`} style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.name}.{c.ext}<span style={{ color: 'var(--text-faint)' }}> · {c.session}</span></span>
+                  <span style={{ color: 'var(--text-faint)' }}>
+                    {c.kind === 'local-only' ? 'only here' : c.kind === 'cloud-only' ? 'only in the cloud' : 'differs'}</span>
+                </div>
+              ))}
+              {changed.length > 8 && <div style={{ color: 'var(--text-faint)' }}>and {changed.length - 8} more…</div>}
+            </div>}
+
+            {folderChanged && <>
+              <div style={{ marginTop: 9, fontSize: 11.5, color: 'var(--text-mute)', lineHeight: 1.5 }}>
+                Last synced folder: <span className="mono">{status.previousRoot}</span>. Uploading is safe, but
+                nothing is removed from the cloud until you confirm this is the folder you mean.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 8, fontSize: 12, color: 'var(--warn)' }}>
+                <Check checked={acceptNewRoot} onChange={setAcceptNewRoot} size={15} label="I mean this folder" />
+                I mean this folder — mirror it and remove what it no longer has
+              </div>
+            </>}
+
+            {(pickSide || folderChanged) && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="primary" icon={IcDownload} onClick={runPull}
+                disabled={busy || !ready || !root || (folderChanged && !acceptNewRoot)}>Use the cloud copy</Btn>
+              {pickSide && <Btn size="sm" variant="solid" icon={IcUpload} onClick={runNow}
+                disabled={busy || !ready || !root}>Keep this PC's version</Btn>}
+              <span style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>
+                files replaced here are kept next to them as .bak</span>
+            </div>}
+          </div>}
+
+          {error && <div role="alert" style={{ marginTop: 14, display: 'flex', gap: 9, padding: '11px 12px',
+            borderRadius: 'var(--r)', background: 'var(--warn-ghost)',
+            border: '1px solid color-mix(in oklab,var(--warn) 30%,transparent)', color: 'var(--warn)',
+            fontSize: 12.5, lineHeight: 1.5 }}>
+            <IcWarn size={15} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error}</span></div>}
+
+          {(phase === 'running' || (phase === 'done' && log.length > 0)) && <div style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
+              <span className="tlabel" style={{ color: phase === 'running' ? 'var(--accent)' : 'var(--text-dim)' }}>
+                {phase === 'running' ? 'Syncing…' : 'Finished'}</span>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                {done}{total ? ` / ${total}` : ''}</span>
+            </div>
+            <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+              style={{ height: 6, borderRadius: 99, background: 'var(--bg-deep)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, borderRadius: 99,
+                background: 'linear-gradient(90deg,var(--accent-deep),var(--accent-bright))',
+                boxShadow: '0 0 12px var(--accent-glow)', transition: 'width .2s' }} /></div>
+            <div style={{ marginTop: 10, maxHeight: 132, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {log.slice(-40).reverse().map((o, i) => (
+                <div key={`${o.session}/${o.name}.${o.ext}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 11.5, color: o.status === 'failed' ? 'var(--warn)' : 'var(--text-dim)' }}>
+                  {o.status === 'failed' || o.status === 'pending' ? <IcWarn size={12} />
+                    : o.status === 'removed' ? <IcTrash size={12} />
+                    : o.status === 'skipped' ? <IcInfo size={12} /> : <IcCheck size={12} />}
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {o.name}.{o.ext}<span style={{ color: 'var(--text-faint)' }}> · {o.session}</span></span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                    {o.status === 'written' ? 'from the cloud'
+                      : o.status === 'skipped' ? 'already there' : o.status === 'replaced' ? 'replaced'
+                      : o.status === 'removed' ? 'removed' : o.status === 'pending' ? (o.error ?? 'left for next time')
+                      : o.status === 'failed' ? (o.error ?? 'failed') : 'uploaded'}</span>
+                </div>
+              ))}
+            </div>
+          </div>}
+
+          {summary && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 10, padding: '13px 14px',
+            borderRadius: 'var(--r-md)', background: summary.failed ? 'var(--warn-ghost)' : 'var(--ok-ghost)',
+            border: `1px solid color-mix(in oklab,${summary.failed ? 'var(--warn)' : 'var(--ok)'} 30%,transparent)` }}>
+            {summary.failed ? <IcWarn size={18} style={{ color: 'var(--warn)', flexShrink: 0, marginTop: 1 }} />
+              : <IcCheck size={18} style={{ color: 'var(--ok)', flexShrink: 0, marginTop: 1 }} />}
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5,
+              color: summary.failed ? 'var(--warn)' : 'var(--ok)' }}>
+              <div>{summary.total === 0 ? 'No blueprints in this folder yet.'
+                : <>{summary.uploaded} uploaded{summary.bytes ? ` (${bytesLabel(summary.bytes)})` : ''}{summary.replaced ? `, ${summary.replaced} replacing ${summary.replaced === 1 ? 'an older copy' : 'older copies'}` : ''}{summary.removed ? `, ${summary.removed} removed` : ''}{summary.skipped ? `, ${summary.skipped} already there` : ''}.</>}</div>
+              {summary.pendingRemovals > 0 && <div style={{ marginTop: 3 }}>
+                {summary.pendingRemovals} file{summary.pendingRemovals === 1 ? ' is' : 's are'} gone here but left on the server — sync again to remove {summary.pendingRemovals === 1 ? 'it' : 'them'}.</div>}
+              {summary.failed > 0 && <div style={{ marginTop: 3 }}>{summary.failed} couldn't be uploaded. They'll be tried again next time.</div>}
+            </div>
+          </div>}
+          {pulled && <div role="status" style={{ marginTop: 14, display: 'flex', gap: 10, padding: '13px 14px',
+            borderRadius: 'var(--r-md)', background: pulled.failed ? 'var(--warn-ghost)' : 'var(--ok-ghost)',
+            border: `1px solid color-mix(in oklab,${pulled.failed ? 'var(--warn)' : 'var(--ok)'} 30%,transparent)` }}>
+            {pulled.failed ? <IcWarn size={18} style={{ color: 'var(--warn)', flexShrink: 0, marginTop: 1 }} />
+              : <IcCheck size={18} style={{ color: 'var(--ok)', flexShrink: 0, marginTop: 1 }} />}
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5,
+              color: pulled.failed ? 'var(--warn)' : 'var(--ok)' }}>
+              <div>{pulled.written} copied from the cloud{pulled.bytes ? ` (${bytesLabel(pulled.bytes)})` : ''}
+                {pulled.same ? `, ${pulled.same} already the same` : ''}. Reload the save to see them in game.</div>
+              {pulled.written > 0 && <div style={{ marginTop: 3 }}>
+                The files they replaced are kept next to them as <span className="mono">.bak</span>.</div>}
+              {pulled.failed > 0 && <div style={{ marginTop: 3 }}>{pulled.failed} couldn't be copied. Nothing was written for those.</div>}
+            </div>
+          </div>}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 19px', borderTop: '1px solid var(--border)' }}>
+          <Btn variant="ghost" icon={IcClose} onClick={runForget} disabled={busy || (!hasToken && !form.url)}>Forget</Btn>
+          <span className="tlabel" style={{ fontSize: 9, color: 'var(--text-faint)' }}>
+            {root ? 'Every .sbp and .sbpcfg is checked by reading it back' : 'No blueprints folder found'}
+          </span>
+          <div style={{ flex: 1 }} />
+          <Btn variant="solid" icon={IcCloud} onClick={runTest} disabled={busy || !ready}>Test</Btn>
+          <Btn variant="primary" icon={IcUpload} onClick={runNow} disabled={busy || !ready || !root}>
+            {phase === 'running' ? 'Syncing…' : 'Sync now'}</Btn>
         </div>
       </div>
     </div>
