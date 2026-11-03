@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Archive — Satisfactory blueprint manager</title>
+<meta name="description" content="A free desktop app to collect, import, organize and share Satisfactory blueprints across worlds and with friends. Windows and macOS.">
+<meta property="og:title" content="Factory Archive">
+<meta property="og:description" content="Collect, import, organize and share your Satisfactory blueprints.">
+<meta property="og:image" content="https://mike623.github.io/factory-archive/screenshots/library.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens mirror app/src/styles.css so the site looks like the app. */
+:root {
+  --bg: #0c0e11; --bg-deep: #08090b; --panel: #13161b; --panel-2: #181c22; --raise: #232932;
+  --border: #262c35; --border-strong: #333b46;
+  --text: #e7eaef; --text-dim: #9aa3af; --text-mute: #8a93a1;
+  --accent: #ffae3b; --accent-bright: #ffc266; --accent-press: #e8902b; --on-accent: #1a1206;
+  --accent-ghost: rgba(255,174,59,.10); --accent-line: rgba(255,174,59,.28); --accent-glow: rgba(255,174,59,.35);
+  --ok: #5ccb8e; --grid: rgba(255,255,255,.035);
+  --shadow-lg: 0 30px 80px -20px rgba(0,0,0,.75);
+  --ease: cubic-bezier(.2,.7,.3,1);
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f3f1ec; --bg-deep: #e7e3db; --panel: #fdfcfa; --panel-2: #f7f5f0; --raise: #ffffff;
+    --border: #e1dcd3; --border-strong: #cfc8bc;
+    --text: #23272e; --text-dim: #4f5661; --text-mute: #666d78;
+    --accent: #ef9311; --accent-bright: #a35a06; --accent-press: #d77f08; --on-accent: #1a1206;
+    --accent-ghost: rgba(239,147,17,.12); --accent-line: rgba(239,147,17,.42); --accent-glow: rgba(239,147,17,.30);
+    --ok: #1f9d57; --grid: rgba(0,0,0,.04);
+    --shadow-lg: 0 30px 80px -24px rgba(40,33,16,.28);
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 var(--font-display); -webkit-font-smoothing: antialiased;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+a { color: var(--accent-bright); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+img { max-width: 100%; height: auto; display: block; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+.mono { font-family: var(--font-mono); }
+.eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-bright); }
+.skip { position: absolute; left: -999px; top: 8px; }
+.skip:focus { left: 8px; background: var(--panel); padding: 8px 12px; z-index: 100; }
+
+/* nav */
+nav { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+nav .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 600; }
+.brand img { width: 30px; height: 30px; }
+.brand small { display: block; font: 500 9.5px/1 var(--font-mono); letter-spacing: .16em; color: var(--text-mute); margin-top: 3px; }
+.navlinks { display: flex; gap: 22px; margin-left: auto; }
+.navlinks a { color: var(--text-dim); text-decoration: none; font-size: 14.5px; transition: color .2s var(--ease); }
+.navlinks a:hover { color: var(--text); }
+@media (max-width: 760px) { .navlinks { display: none; } nav .btn-sm { margin-left: auto; } }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 22px; border-radius: 10px;
+  font: 600 15.5px/1 var(--font-display); text-decoration: none; cursor: pointer; border: 1px solid transparent;
+  transition: background .2s var(--ease), border-color .2s var(--ease), transform .15s var(--ease), box-shadow .2s var(--ease); }
+.btn:active { transform: scale(.98); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 8px 28px -8px var(--accent-glow); }
+.btn-primary:hover { background: var(--accent-press); }
+.btn-ghost { background: var(--panel); color: var(--text); border-color: var(--border-strong); }
+.btn-ghost:hover { border-color: var(--accent-line); background: var(--panel-2); }
+.btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.btn small { display: block; font: 500 11px/1.2 var(--font-mono); opacity: .75; margin-top: 4px; }
+
+/* hero */
+.hero { padding: 88px 0 40px; text-align: center; }
+.hero h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.04; letter-spacing: -.03em; margin: 18px auto 18px; max-width: 14ch; font-weight: 700; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p.lede { font-size: clamp(17px, 2vw, 19.5px); color: var(--text-dim); max-width: 60ch; margin: 0 auto 32px; }
+.ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.meta { margin-top: 16px; font: 12.5px/1.5 var(--font-mono); color: var(--text-mute); }
+.shot { margin: 56px auto 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg), 0 0 0 6px var(--accent-ghost); background: var(--panel); }
+.shot .bar { display: flex; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--border-strong); }
+
+/* sections */
+section { padding: 96px 0 0; }
+.head { max-width: 720px; margin-bottom: 44px; }
+.head h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.12; letter-spacing: -.02em; margin: 12px 0 12px; }
+.head p { color: var(--text-dim); margin: 0; font-size: 17px; }
+
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px; transition: border-color .2s var(--ease); }
+.card:hover { border-color: var(--accent-line); }
+.card .ic { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 10px;
+  background: var(--accent-ghost); border: 1px solid var(--accent-line); color: var(--accent); margin-bottom: 18px; }
+.card .ic svg { width: 21px; height: 21px; }
+.card h3 { margin: 0 0 8px; font-size: 18.5px; letter-spacing: -.01em; }
+.card p { margin: 0; color: var(--text-dim); font-size: 15.5px; }
+
+/* split rows */
+.split { display: grid; grid-template-columns: 1fr 1.35fr; gap: 56px; align-items: center; margin-bottom: 88px; }
+.split.flip > :first-child { order: 2; }
+.split h3 { font-size: clamp(24px, 3vw, 31px); letter-spacing: -.02em; line-height: 1.15; margin: 12px 0 14px; }
+.split p { color: var(--text-dim); margin: 0 0 16px; }
+.split ul { margin: 0; padding: 0; list-style: none; }
+.split li { display: flex; gap: 10px; padding: 7px 0; color: var(--text-dim); font-size: 15.5px; }
+.split li svg { width: 18px; height: 18px; flex: none; color: var(--ok); margin-top: 3px; }
+.frame { border-radius: 12px; overflow: hidden; border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 28px; } .split.flip > :first-child { order: 0; } }
+
+/* steps */
+.steps { counter-reset: s; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.step { counter-increment: s; position: relative; padding: 26px; border-radius: 14px; background: var(--panel); border: 1px solid var(--border); }
+.step::before { content: counter(s, decimal-leading-zero); font: 500 13px/1 var(--font-mono); color: var(--accent-bright); }
+.step h3 { margin: 12px 0 6px; font-size: 17.5px; }
+.step p { margin: 0; color: var(--text-dim); font-size: 15px; }
+code { font: 13.5px var(--font-mono); background: var(--panel-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; }
+
+/* download */
+.download { margin-top: 96px; padding: 56px 32px; text-align: center; border-radius: 18px;
+  background: radial-gradient(120% 140% at 50% 0%, var(--accent-ghost), transparent 60%), var(--panel);
+  border: 1px solid var(--accent-line); }
+.download h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.02em; margin: 12px 0 10px; }
+.download p { color: var(--text-dim); max-width: 58ch; margin: 0 auto 28px; }
+.download .btn { text-align: left; min-height: 60px; padding: 0 26px; }
+.download .meta { margin-top: 20px; }
+details { max-width: 640px; margin: 28px auto 0; text-align: left; color: var(--text-dim); font-size: 15px; }
+summary { cursor: pointer; color: var(--text); font-weight: 500; }
+details pre { overflow-x: auto; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font: 13px var(--font-mono); }
+
+footer { margin-top: 96px; border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--text-mute); font-size: 13.5px; }
+footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; justify-content: space-between; }
+footer a { color: var(--text-dim); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.6 2 12.2c0 4.5 2.9 8.3 6.8 9.7.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.4-3.4-1.4-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1.1 1.5 1.1.9 1.6 2.4 1.1 2.9.8.1-.7.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10.2 10.2 0 0 0 22 12.2C22 6.6 17.5 2 12 2z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V18a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.4 3.3-5.5 6.5-5.5s5.9 2.1 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.5 14.8c1.6.8 2.7 2.6 3 5.2"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 01-.6-9 6 6 0 0111.4 1.6A3.8 3.8 0 0117.5 18z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+</svg>
+
+<nav aria-label="Main">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="favicon.svg" alt="" width="30" height="30"><span>Factory Archive<small>BLUEPRINT MANAGER</small></span></a>
+    <div class="navlinks">
+      <a href="#features">Features</a>
+      <a href="#multiplayer">Multiplayer</a>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/mike623/factory-archive">GitHub</a>
+    </div>
+    <a class="btn btn-primary btn-sm" href="#download"><svg aria-hidden="true"><use href="#i-download"/></svg>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+  <header class="hero" id="top">
+    <div class="wrap">
+      <span class="eyebrow">Free desktop app for Satisfactory</span>
+      <h1>Every blueprint, <em>one archive.</em></h1>
+      <p class="lede">Collect, import, organize and share your <span class="mono">.sbp</span> blueprints across worlds and with friends, without digging through save folders.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="#download"><svg aria-hidden="true"><use href="#i-download"/></svg>Download for Windows &amp; macOS</a>
+        <a class="btn btn-ghost" href="https://github.com/mike623/factory-archive"><svg aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      </div>
+      <p class="meta"><span class="js-version">Latest release</span> · MIT licensed · open source</p>
+      <div class="shot">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="screenshots/demo.gif" width="960" height="600"
+             alt="Factory Archive in use: searching the library, opening a blueprint's details and importing one from a SCIM link">
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Features</span>
+        <h2>Built around how the game actually stores blueprints.</h2>
+        <p>Blueprints live in one folder per world. Factory Archive reads that folder directly and keeps everything else out of it.</p>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-folder"/></svg></div>
+          <h3>Your real library</h3><p>Reads the <span class="mono">.sbp</span> files in your game folder, grouped by world, and opens on the world you're playing.</p></div>
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-link"/></svg></div>
+          <h3>Import from a link</h3><p>Paste a SCIM or Satisfactory Blueprints page, or a direct file link. The blueprint lands in your world with its picture and details.</p></div>
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-cube"/></svg></div>
+          <h3>See what's inside</h3><p>Size, material cost and buildings, read straight from the file. Works offline, for any blueprint.</p></div>
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-search"/></svg></div>
+          <h3>Find anything fast</h3><p>Search with <kbd class="mono">Ctrl/⌘ K</kbd>, filter by tag or world, star favorites and copy blueprints between worlds.</p></div>
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-users"/></svg></div>
+          <h3>Share on your LAN</h3><p>Friends open your library in their browser, or join from their own app in client mode.</p></div>
+        <div class="card"><div class="ic"><svg aria-hidden="true"><use href="#i-cloud"/></svg></div>
+          <h3>Back up to WebDAV</h3><p>Sync to InfiniCLOUD, Nextcloud, Synology or your own server. Every upload is read back and checked.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="split">
+        <div>
+          <span class="eyebrow">Blueprint details</span>
+          <h3>Know the cost before you place it.</h3>
+          <p>Open any blueprint for a breakdown read from the file itself, not from a website.</p>
+          <ul>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Dimensions, material cost and building counts</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Author, description, tags and source link</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Rename, favorite, or copy to another world</li>
+          </ul>
+        </div>
+        <div class="frame"><img src="screenshots/detail.png" width="2880" height="1800" loading="lazy"
+             alt="Blueprint detail page showing size, power, files, source and a gallery of pictures"></div>
+      </div>
+
+      <div class="split flip">
+        <div>
+          <span class="eyebrow">Import</span>
+          <h3>Paste a link. Done.</h3>
+          <p>The app finds the real download on the page and writes it straight into your world. If it can't find one, it says so and writes nothing.</p>
+          <ul>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>SCIM pages, SCIM user profiles and Satisfactory Blueprints</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Direct <span class="mono">.sbp</span> links, or drag files onto the window</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Details stored in the app's own folder, never in the game's</li>
+          </ul>
+        </div>
+        <div class="frame"><img src="screenshots/import.png" width="2880" height="1800" loading="lazy"
+             alt="Import dialog with a SCIM link pasted and the resolved blueprint ready to add"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="multiplayer" style="padding-top:0">
+    <div class="wrap">
+      <div class="split">
+        <div>
+          <span class="eyebrow">Multiplayer</span>
+          <h3>Blueprints belong to the world. Share the world's.</h3>
+          <p>In multiplayer, blueprints live on the host's PC. Turn on <strong>Share on LAN</strong> and friends get the same app in their browser, working on your folder.</p>
+          <ul>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Browse, download, add and organize together</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Client mode finds a host on your network by itself</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Light and dark themes, on every device</li>
+          </ul>
+        </div>
+        <div class="frame"><img src="screenshots/library-light.png" width="2880" height="1800" loading="lazy"
+             alt="The blueprint library in light theme, grouped by category"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" style="padding-top:0">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">How it works</span>
+        <h2>Three steps from link to factory floor.</h2>
+      </div>
+      <div class="steps">
+        <div class="step"><h3>Install and open</h3><p>The app finds your blueprints folder on its own. On a Mac it looks in CrossOver for your game data.</p></div>
+        <div class="step"><h3>Add blueprints</h3><p>Paste a link, drop files on the window, or copy favorites in from another world.</p></div>
+        <div class="step"><h3>Reload your save</h3><p>Load the world again from the main menu. No restart, and your new blueprints are there.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="download" id="download">
+      <span class="eyebrow">Download</span>
+      <h2>Get Factory Archive</h2>
+      <p>Free and open source. Installed copies update themselves.</p>
+      <div class="ctas">
+        <a class="btn btn-primary js-win" href="https://github.com/mike623/factory-archive/releases/latest">
+          <svg aria-hidden="true"><use href="#i-download"/></svg><span>Windows 10/11<small>.exe installer</small></span></a>
+        <a class="btn btn-ghost js-mac" href="https://github.com/mike623/factory-archive/releases/latest">
+          <svg aria-hidden="true"><use href="#i-download"/></svg><span>macOS 11+<small>Universal .dmg</small></span></a>
+      </div>
+      <p class="meta"><a href="https://github.com/mike623/factory-archive/releases">All releases</a></p>
+      <details>
+        <summary>First launch: the builds aren't code-signed yet</summary>
+        <p><strong>Windows:</strong> if SmartScreen warns, click <em>More info → Run anyway</em>.</p>
+        <p><strong>macOS:</strong> right-click the app → <em>Open</em>, or run:</p>
+        <pre>xattr -dr com.apple.quarantine "/Applications/Factory Archive.app"</pre>
+      </details>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Fan-made tool, not affiliated with Coffee Stain Studios, SCIM or Satisfactory Blueprints. Satisfactory is a trademark of Coffee Stain Studios.</span>
+    <span><a href="https://github.com/mike623/factory-archive">GitHub</a> · <a href="https://github.com/mike623/factory-archive/blob/main/LICENSE">MIT License</a></span>
+  </div>
+</footer>
+
+<script>
+// Point the download buttons at the newest installers. Falls back to the releases page.
+fetch('https://api.github.com/repos/mike623/factory-archive/releases/latest')
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(rel => {
+    const find = re => (rel.assets || []).find(a => re.test(a.name));
+    const win = find(/_x64-setup\.exe$/), mac = find(/_universal\.dmg$/);
+    if (win) document.querySelector('.js-win').href = win.browser_download_url;
+    if (mac) document.querySelector('.js-mac').href = mac.browser_download_url;
+    if (rel.tag_name) document.querySelector('.js-version').textContent = 'Version ' + rel.tag_name.replace(/^v/, '');
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>
