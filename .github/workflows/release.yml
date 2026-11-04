@@ -154,6 +154,35 @@ jobs:
           EOF
           echo "Bundled $tag ($(wc -c < app/src-tauri/resources/FactoryArchiveLive.zip) bytes)"
 
+      # Developer ID signing + notarization. The Tauri bundler imports the certificate into a
+      # temporary keychain itself. Exported only when the secrets exist: an empty APPLE_CERTIFICATE
+      # would make the bundler fail instead of skipping, so without them the build stays unsigned.
+      - name: Apple signing credentials
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning title=macOS signing::APPLE_CERTIFICATE secret not set; the macOS build will be unsigned"
+            exit 0
+          fi
+          for v in APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then echo "::error title=macOS signing::Secret $v is missing"; exit 1; fi
+          done
+          {
+            echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_ID=$APPLE_ID"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          } >> "$GITHUB_ENV"
+          echo "macOS signing and notarization enabled"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
