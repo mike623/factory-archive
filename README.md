@@ -43,10 +43,7 @@ Get the latest installer from **[Releases](https://github.com/mike623/factory-ar
 | macOS 11+ (Apple Silicon & Intel) | `Factory.Archive_<version>_universal.dmg` |
 
 > [!NOTE]
-> Builds aren't code-signed yet. On **Windows**, if SmartScreen warns, click **More info → Run anyway**. On **macOS**, right-click the app → **Open**, or run:
-> ```bash
-> xattr -dr com.apple.quarantine "/Applications/Factory Archive.app"
-> ```
+> The macOS app is signed and notarized by Apple. The Windows installer isn't code-signed yet: if SmartScreen warns, click **More info → Run anyway**.
 
 ## Usage
 
